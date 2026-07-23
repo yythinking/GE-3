@@ -12,7 +12,7 @@ class OpenLLM(BaseLLM):
         self.base_url = base_url
         self.temperature = temperature
         
-        # 基础配置参数
+        # Base configuration parameters
         base_config = {
             "model": self.model_name,
             "model_provider": "openai",
@@ -21,7 +21,7 @@ class OpenLLM(BaseLLM):
             "temperature": self.temperature
         }
         
-        # 根据模型名称设置额外的配置参数
+        # Set extra configuration parameters based on model name
         model_name_lower = model_name.lower()
         extra_body = None
         
@@ -30,7 +30,7 @@ class OpenLLM(BaseLLM):
         elif "doubao" in model_name:
             extra_body = {"thinking": {"type": "disabled"}}
         elif "gemini" in model_name_lower:
-            if "pro" in model_name_lower: # Gemini Pro 系列模型不支持 minimal 级别的思考配置, 只能设置为 low
+            if "pro" in model_name_lower: # Gemini Pro series models don't support minimal level thinking config, can only set to low
                 extra_body={
                     'extra_body': {
                         "google": {
@@ -40,7 +40,7 @@ class OpenLLM(BaseLLM):
                         }
                     }
                 }
-            else:      # Gemini 系列模型支持 minimal 级别的思考配置
+            else:      # Gemini series models support minimal level thinking config
                 extra_body={
                     'extra_body': {
                         "google": {
@@ -50,145 +50,96 @@ class OpenLLM(BaseLLM):
                         }
                     }
                 }
-        # 构建最终配置
+        # Build final configuration
         if extra_body:
             config = {**base_config, "extra_body": extra_body}
         else:
             config = base_config
         
-        # 为Qwen模型添加限速设置
+        # Add rate limiting for Qwen models
         if "qwen" in model_name_lower and "235b" in model_name_lower:
-            # 为Qwen3-235B-A22B-Instruct-2507模型设置更严格的限速
+            # Set stricter rate limiting for Qwen3-235B-A22B-Instruct-2507 model
             rate_limiter = InMemoryRateLimiter(
-                requests_per_second=0.116667,    # 每秒0.1个请求（每10秒一次）
-                check_every_n_seconds=0.1,   # 每100ms检查一次
-                max_bucket_size=3            # 严格按照每分钟最多三次请求
+                requests_per_second=0.116667,    # 0.1 requests per second (once per 10 seconds)
+                check_every_n_seconds=0.1,   # Check every 100ms
+                max_bucket_size=3            # Strictly limit to max 3 requests per minute
             )
-            # 将限速器添加到配置中
+            # Add rate limiter to config
             config["rate_limiter"] = rate_limiter
-        # else:
-        #     # 其他模型使用默认限速
-        #     rate_limiter = InMemoryRateLimiter(
-        #         requests_per_second=0.1,     # 每秒0.1个请求（每10秒一次）
-        #         check_every_n_seconds=0.1,   # 每100ms检查一次
-        #         max_bucket_size=10           # 最大突发请求量10
-        #     )
-        #     config["rate_limiter"] = rate_limiter
         
-        # 初始化聊天模型
+        # Initialize chat model
         self.chat_model = init_chat_model(**config)
 
 
     def generate(self, prompt: str) -> str:
         """
-        生成响应 - 实现父类定义的抽象方法
+        Generate response - implement abstract method defined by parent class
         """
         try:
-            # 调用 OpenAI 兼容模型生成响应
-            # 直接返回内容
+            # Call OpenAI compatible model to generate response
+            # Directly return content
             response = self.chat_model.invoke(prompt)
-
-            # # 统计一次交互消耗的 token 数(计算 prompt 和 response 的 token 数), 并输出.需要处理第三方模型的情况,计算大概的 token 数即可
-            # prompt_tokens = 0
-            # completion_tokens = 0
-            # total_tokens = 0
-
-            # # 策略 1: 优先尝试从 API 返回的元数据中获取准确数值
-            # if hasattr(response, 'response_metadata') and 'token_usage' in response.response_metadata:
-            #     usage = response.response_metadata['token_usage']
-            #     prompt_tokens = usage.get('prompt_tokens', 0)
-            #     completion_tokens = usage.get('completion_tokens', 0)
-            #     total_tokens = usage.get('total_tokens', 0)
-            
-            # # 策略 2: 如果 API 没有返回，进行粗略估算 (Fallback)
-            # if total_tokens == 0:
-            #     try:
-            #         # 使用 OpenAI 的标准编码器估算
-            #         # 注意：第三方模型(如 Kimi/GLM)的分词器不同，这里仅为粗略估算
-            #         encoding = tiktoken.get_encoding("cl100k_base")
-            #         prompt_tokens = len(encoding.encode(prompt))
-            #         completion_tokens = len(encoding.encode(response.content))
-            #         total_tokens = prompt_tokens + completion_tokens
-            #     except Exception as e:
-            #         # 策略 3: 最差情况下的启发式估算 (适用于 tiktoken 加载失败等情况)
-            #         # 假设中文语境下，1 token 约等于 1.5 - 2 个字符
-            #         prompt_tokens = int(len(prompt) / 1.5)
-            #         completion_tokens = int(len(response.content) / 1.5)
-            #         total_tokens = prompt_tokens + completion_tokens
-            #         print(f"[{self.model_name}] Tiktoken 估算失败，降级为字符长度估算: {e}")
-
-            # # 输出 token 消耗信息（你可以将这部分记录到日志或者累加到限速器中）
-            # # \033[46m: 青色背景 | \033[30m: 黑色文字 | \033[1m: 加粗 | \033[0m: 重置格式
-            # highlight_start = "\033[46;30;1m"
-            # highlight_end = "\033[0m"
-            
-            # log_message = f"[{self.model_name}] Token 消耗 - 输入: {prompt_tokens}, 输出: {completion_tokens}, 总计: {total_tokens}"
-            
-            # # 使用空行 \n 确保与上下文有间隔
-            # print(f"\n{highlight_start} {log_message} {highlight_end}\n")
-            # # ----------------------------------------------
-
             return response.content 
             
         except Exception as e:
-            # 可以在这里加日志
-            print(f"第三方兼容模型 {self.model_name} 调用失败: {e}")
+            # Can add logging here
+            print(f"Third-party compatible model {self.model_name} call failed: {e}")
             return f"Error generating response: {str(e)}"
     
     def _get_tokenizer(self):
-        """获取 tiktoken tokenizer 实例（懒加载）"""
+        """Get tiktoken tokenizer instance (lazy loading)"""
         if not hasattr(self, '_tokenizer'):
             self._tokenizer = tiktoken.get_encoding("cl100k_base")
         return self._tokenizer
     
     def tokenize(self, text: str) -> List[int]:
         """
-        使用 tiktoken 对文本进行 tokenize
+        Tokenize text using tiktoken
         
-        参数:
-            text: 输入文本
+        Parameters:
+            text: Input text
             
-        返回:
-            token ID 列表
+        Returns:
+            Token ID list
         """
         try:
             encoding = self._get_tokenizer()
             return encoding.encode(text)
         except Exception as e:
             print(f"[OpenLLM] Tokenization failed: {e}")
-            # 回退：简单按字符拆分
+            # Fallback: simple character splitting
             return [ord(c) for c in text]
     
     def detokenize(self, tokens: List[int]) -> str:
         """
-        使用 tiktoken 对 token 列表进行 detokenize
+        Detokenize token list using tiktoken
         
-        参数:
-            tokens: token ID 列表
+        Parameters:
+            tokens: Token ID list
             
-        返回:
-            解码后的文本
+        Returns:
+            Decoded text
         """
         try:
             encoding = self._get_tokenizer()
             return encoding.decode(tokens)
         except Exception as e:
             print(f"[OpenLLM] Detokenization failed: {e}")
-            # 回退：简单按字符解码
+            # Fallback: simple character decoding
             return ''.join([chr(t) if 0 < t < 128 else ' ' for t in tokens])
     
     def get_vocab_size(self) -> int:
         """
-        返回词表大小
+        Return vocabulary size
         
-        动态从 tokenizer 获取，避免硬编码不一致
+        Dynamically obtained from tokenizer to avoid hardcoded inconsistencies
         """
         return self._get_tokenizer().n_vocab
     
     def get_model_info(self):
-        """返回模型信息"""
+        """Return model information"""
 
-        # 对 base_url 进行简化，只保留域名部分
+        # Simplify base_url to keep only domain part
         base_url_only = self.base_url.split('//')[-1].split('/')[0]
 
 

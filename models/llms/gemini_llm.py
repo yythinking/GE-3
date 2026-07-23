@@ -5,13 +5,13 @@ from ..interfaces.llm_interface import BaseLLM
 class GeminiLLM(BaseLLM):
     def __init__(self, model_name: str, api_key: str, temperature: float = 0.7):
         """
-        官方 Gemini 初始化：不需要 base_url。
+        Official Gemini initialization: no base_url required.
         """
         self.model_name = model_name
         self.temperature = temperature
         self.api_key = api_key
 
-        # 使用官方 Google Generative AI 集成
+        # Use official Google Generative AI integration
         self.chat_model = ChatGoogleGenerativeAI(
             model=self.model_name,
             google_api_key=self.api_key,
@@ -20,39 +20,39 @@ class GeminiLLM(BaseLLM):
 
     def generate(self, prompt: str) -> str:
         """
-        生成响应 - 实现父类定义的抽象方法
+        Generate response - implement abstract method defined by parent class
         """
         try:
-            # 官方集成支持直接传入字符串或 Message 对象
+            # Official integration supports direct string or Message object input
             response = self.chat_model.invoke(prompt)
             content = response.content
 
-            # --- gemini 返回列表 ---
+            # --- Gemini returns list ---
             if isinstance(content, str):
                 return content
             
             if isinstance(content, list):
-                # 针对多模态或复杂输出，提取所有文本内容并合并
+                # For multimodal or complex output, extract all text content and merge
                 extracted_text = []
                 for item in content:
                     if isinstance(item, str):
                         extracted_text.append(item)
                     elif isinstance(item, dict) and "text" in item:
                         extracted_text.append(item["text"])
-                    elif hasattr(item, "text"): # 兼容某些特定的对象格式
+                    elif hasattr(item, "text"): # Compatible with certain specific object formats
                         extracted_text.append(item.text)
                 
                 return "".join(extracted_text).strip()
-            # --- 核心修复逻辑结束 ---
+            # --- Core fix logic ends ---
 
-            return str(content) # 保底处理
+            return str(content) # Fallback handling
             
         except Exception as e:
-            print(f"Gemini 模型 {self.model_name} 调用失败: {e}")
+            print(f"Gemini model {self.model_name} call failed: {e}")
             return f"Error generating response: {str(e)}"
     
     def get_model_info(self):
-        """返回模型信息"""
+        """Return model information"""
         return {
             "model_name": self.model_name,
             "temperature": self.temperature,

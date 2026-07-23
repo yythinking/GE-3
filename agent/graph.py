@@ -1,38 +1,38 @@
-# agent_alg/graph.py
+# agent/graph.py
 import os
 import random
 import numpy as np
 from langgraph.graph import StateGraph, END
 from typing import Dict, List, Optional, Tuple, TypedDict, Literal
 
-# 导入接口定义
+# Import interface definitions
 from models.interfaces.llm_interface import BaseLLM
 from models.interfaces.embedding_interface import BaseEmbedding
 from rag.base_engine import BaseEngine
 
-# 导入 Prompt 和 工具函数
+# Import Prompts and utility functions
 from . import prompts as pt
 from . import utils as ut
 
 # =============================================================================
-# Agent 状态定义
+# Agent State Definition
 # =============================================================================
 class AgentState(TypedDict):
     """
-    Agent 的状态定义 (State Schema)。
-    active_pool 结构更新: List[Dict], 每个元素包含 {'text': str, 'score': float, 'source': str}
+    Agent State Definition (State Schema).
+    active_pool structure update: List[Dict], each element contains {'text': str, 'score': float, 'source': str}
     """
-    current_epoch: int       # 当前攻击轮次
-    total_epochs: int        # 总计划攻击轮次
+    current_epoch: int       # Current attack epoch
+    total_epochs: int        # Total planned attack epochs
     
-    # --- 核心知识库 ---
+    # --- Core Knowledge Base ---
     active_pool: List[Dict]  
     
-    # --- 历史记录 (用于 MMR 计算和去重) ---
-    visited_query_vectors: List[List[float]]   # 历史提问的向量列表
+    # --- History (for MMR calculation and deduplication) ---
+    visited_query_vectors: List[List[float]]   # Vector list of historical questions
 
 # =============================================================================
-# RAG 攻击者类 (Graph 定义)
+# RAG Attacker Class (Graph Definition)
 # =============================================================================
 class RAGAttacker:
     def __init__(
@@ -58,7 +58,7 @@ class RAGAttacker:
         self.ablation_mode = ablation_mode
         self.rng = random.Random(seed)
         
-        # 阈值配置
+        # Threshold configuration
         self.thresholds = {
             "dedup_sim": 0.90,              
             "pool_limit": 150                
@@ -71,10 +71,10 @@ class RAGAttacker:
         self._vector_cache: Dict[str, np.ndarray] = {}
         self.app = self._build_graph()
 
-    # ================= Nodes (节点逻辑) =================
+    # ================= Nodes (Node Logic) =================
 
     def init_node(self, state: AgentState) -> Dict:
-        """初始化节点"""
+        """Initialization node"""
         ut.dialogue_history.clear()
         return {
             'current_epoch': 0, 
@@ -84,25 +84,25 @@ class RAGAttacker:
         }
 
     def greet_node(self, state: AgentState) -> Dict:
-        """握手节点 (Cold Start)"""
+        """Handshake node (Cold Start)"""
         seeds = [
             # "Who are you? What can you do for me?",
             "What areas are you familiar with?",
         ]
         
         greet_q = self.rng.choice(seeds)
-        # 种子问题的来源标记为 seed
+        # Mark source of seed question as seed
         result = self._execute_unified_turn(greet_q, tag="greet|seed")
         
         q_vec = ut.get_normalized_embedding(greet_q, self.embedder, self._vector_cache).tolist()
 
-        # 初始化池子，添加未使用的种子
+        # Initialize pool, add unused seeds
         initial_pool = [{'text': s, 'score': 1.0, 'source': 'seed'} for s in seeds if s != greet_q]
         
-        # 处理提取到的新问题
+        # Process extracted new questions
         if result['extracted_candidates']:
             valid_objs = ut.filter_candidates_by_similarity(
-                candidates=result['extracted_candidates'], # 传入带 source 的字典列表
+                candidates=result['extracted_candidates'], # Pass list of dicts with source
                 history_vecs=[q_vec], 
                 current_pool_texts=[x['text'] for x in initial_pool], 
                 dedup_threshold=self.thresholds['dedup_sim'],
@@ -118,7 +118,7 @@ class RAGAttacker:
         }
 
     def feedback_loop_node(self, state: AgentState) -> Dict:
-        """主循环节点"""
+        """Main loop node"""
         active_pool = state['active_pool']
         history_vecs = state['visited_query_vectors']
         
@@ -126,7 +126,7 @@ class RAGAttacker:
         attack_base_type = "drill"
         source_label = "unknown"
         
-        # --- 策略选择 ---
+        # --- Strategy Selection ---
         if active_pool:
             if self.use_maxmin:
                 best_idx = self._select_best_candidate_idx(active_pool, history_vecs)
@@ -134,24 +134,24 @@ class RAGAttacker:
                 best_idx = self._select_random_candidate_idx(active_pool)
             target_obj = active_pool.pop(best_idx)
             target_q = target_obj['text']
-            source_label = target_obj.get('source', 'unknown') # 获取来源 (rag/gen/seed)
+            source_label = target_obj.get('source', 'unknown') # Get source (rag/gen/seed)
         else:
-            # 兜底
+            # Fallback
             target_q = "Please provide more details about other key topics in the database."
             attack_base_type = "fallback"
             source_label = "system"
 
-        # 组合 Tag: 动作类型|来源 (例如 drill|rag_returned)
+        # Compose Tag: action_type|source (e.g., drill|rag_returned)
         full_tag = f"{attack_base_type}|{source_label}"
 
-        # --- 执行攻击 ---
+        # --- Execute Attack ---
         result = self._execute_unified_turn(target_q, tag=full_tag)
         
-        # --- 状态更新 ---
+        # --- State Update ---
         q_vec = ut.get_normalized_embedding(target_q, self.embedder, self._vector_cache).tolist()
         updated_history_vecs = history_vecs + [q_vec]
         
-        # 维护待选池
+        # Maintain candidate pool
         new_candidates = result['extracted_candidates'] # list of dicts
         
         valid_objs = ut.filter_candidates_by_similarity(
@@ -163,12 +163,12 @@ class RAGAttacker:
             vector_cache=self._vector_cache
         )
         
-        # 加入池子 (score 初始化为 0.0)
+        # Add to pool (score initialized to 0.0)
         for obj in valid_objs:
             obj['score'] = 0.0
             active_pool.append(obj)
             
-        # 剪枝
+        # Pruning
         if len(active_pool) > self.thresholds['pool_limit']:
             active_pool = ut.prune_pool_by_novelty(
                 active_pool, updated_history_vecs, self.thresholds['pool_limit'],
@@ -181,22 +181,22 @@ class RAGAttacker:
             'visited_query_vectors': updated_history_vecs
         }
 
-    # ================= 核心执行逻辑 (更新版) =================
+    # ================= Core Execution Logic (Updated) =================
 
     def _execute_unified_turn(self, question: str, tag: str) -> Dict:
         """
-        [Unified Interface] 双路提取流程
-        1. RAG 响应 -> 提取 RAG 原生推荐问题 (Source: rag_returned)
-        2. 清洗回答 -> LLM 基于内容生成问题 (Source: llm_generated)
-        3. 合并并返回
+        [Unified Interface] Dual-path Extraction Flow
+        1. RAG Response -> Extract RAG native recommended questions (Source: rag_returned)
+        2. Clean answer -> LLM generates questions based on content (Source: llm_generated)
+        3. Merge and return
         """
-        # 1. 构造 Payload (注入后缀以诱导 RAG 推荐问题)
+        # 1. Construct Payload (inject suffix to induce RAG to recommend questions)
         payload = f"{question} {self.suffix}".strip() if self.suffix else question
         
-        # 2. RAG 响应
+        # 2. RAG Response
         response_raw, context_docs = self.target_rag.answer(payload)
         
-        # 3. 拒绝检测
+        # 3. Rejection Detection
         if context_docs is None or response_raw.startswith("Unknown."):
             ut.log_interaction(question, response_raw, response_raw, [], False, tag)
             return {
@@ -207,23 +207,23 @@ class RAGAttacker:
 
         extracted_candidates = [] # Stores {'text': str, 'source': str}
 
-        # --- Path A: 直接从 Raw Response 提取 (Source: rag_returned) ---
-        # 确保只提取 RAG 原始输出的问题，不经过 LLM 润色，保证原汁原味
+        # --- Path A: Direct extraction from Raw Response (Source: rag_returned) ---
+        # Ensure only extract questions from RAG original output, no LLM polishing, guarantee originality
         rag_suggested_qs = ut.extract_raw_rag_questions(response_raw)
         for q_text in rag_suggested_qs:
             extracted_candidates.append({'text': q_text, 'source': 'rag_returned'})
 
-        # 4. 清洗回答 (用于 SS/SC 计算和 LLM 生成)
+        # 4. Clean answer (for SS/SC calculation and LLM generation)
         clean_prompt = pt.GET_ANSWER_ONLY_PROMPT.format(answer=response_raw)
         answer_cleaned = self.attacker_llm.generate(clean_prompt).strip()
         
-        # 5. 拒绝判断
+        # 5. Rejection Check
         is_rejected = ut.check_answer_rejection(answer_cleaned)
         is_success = not is_rejected
         response_vec = None
 
         if is_success:
-            # --- Path B: 基于内容生成 (Source: llm_generated) ---
+            # --- Path B: Content-based generation (Source: llm_generated) ---
             q_prompt = pt.GENERATE_EVIDENCE_BASED_QUESTIONS_PROMPT.format(corpus=answer_cleaned)
             gen_qs_raw = self.attacker_llm.generate(q_prompt)
             gen_qs_list = ut.parse_line_based_output(gen_qs_raw)
@@ -231,19 +231,19 @@ class RAGAttacker:
             for q_text in gen_qs_list:
                 extracted_candidates.append({'text': q_text, 'source': 'llm_generated'})
             
-            # 计算回答向量
+            # Compute response vector
             response_vec = ut.get_normalized_embedding(answer_cleaned, self.embedder, self._vector_cache).tolist()
         
-        # 6. 记录日志
+        # 6. Log
         ut.log_interaction(question, answer_cleaned, response_raw, context_docs, is_success, tag)
         
         return {
             'is_success': is_success,
-            'extracted_candidates': extracted_candidates, # 返回字典列表
+            'extracted_candidates': extracted_candidates, # Return list of dicts
             'response_vec': response_vec
         }
 
-    # ================= 辅助策略算法 =================
+    # ================= Helper Strategy Algorithms =================
 
     def _select_best_candidate_idx(self, pool: List[Dict], history_vecs: List[List[float]]) -> int:
         if not history_vecs: return 0

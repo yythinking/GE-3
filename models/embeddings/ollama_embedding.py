@@ -7,28 +7,28 @@ class OllamaEmbedding(BaseEmbedding):
         self.model_name = model_name
         self.base_url = base_url
         
-        # 初始化 LangChain 的 Ollama 客户端
+        # Initialize LangChain's Ollama client
         self.client = OllamaEmbeddings(
             model=model_name,
             base_url=base_url
         )
 
     def embed_query(self, text: str) -> List[float]:
-        """调用 Ollama 生成单个查询向量"""
+        """Call Ollama to generate single query vector"""
         return self.client.embed_query(text)
 
     def embed_documents(self, texts: List[str]) -> List[List[float]]:
-        """调用 Ollama 生成文档批处理向量"""
+        """Call Ollama to generate batch document vectors"""
         return self.client.embed_documents(texts)
 
     def get_model_info(self) -> Dict[str, Any]:
         
-        # 对模型名称进行提取，返回冒号前的部分
+        # Extract model name, return part before colon
         model_name_only = self.model_name.split(":")[0]
 
-        # 对 base_url 进行简化，只保留域名部分
+        # Simplify base_url to keep only domain part
         base_url_only = self.base_url.split("//")[-1].split("/")[0]
-        # 去除端口号
+        # Remove port number
         base_url_only = base_url_only.split(':')[0]
 
         return {
@@ -39,10 +39,10 @@ class OllamaEmbedding(BaseEmbedding):
 
     def get_dimension(self) -> int:
         """
-        获取维度的技巧：试运行一次
-        Ollama API 没有直接提供获取维度的端点，通常需要在运行时探测
+        Trick for getting dimension: run a trial
+        Ollama API does not directly provide an endpoint for getting dimension, usually needs to be detected at runtime
         """
-        # 为了避免每次都请求，可以考虑缓存这个值
-        # 这里为了演示简单，做一次实际调用
+        # To avoid requesting every time, consider caching this value
+        # Here for simplicity, make one actual call
         dummy_vec = self.client.embed_query("test")
         return len(dummy_vec)

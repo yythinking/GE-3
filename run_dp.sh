@@ -1,15 +1,15 @@
 #!/bin/bash
-# 差分隐私 RAG 攻击测试管道启动脚本
-# 使用统一的 DP 参数配置
+# run_dp.sh - Differential Privacy RAG Attack Testing Pipeline
+# Launches pipeline_DP.py with unified DP parameter configuration
 
-# DP 参数配置
-N_SPLIT=30            # voter 数量 / prompt 变体数
-DP_EPS=5.0            # 每个 token 的 DP epsilon
-DP_DELTA=1e-6         # 每个 token 的 DP delta
-TARGET_EPS=200.0      # 总 epsilon 预算上限
-TARGET_DELTA=2e-4     # 总 delta 预算上限
-MAX_TOKENS=50         # 生成的最大 token 数
-FAIL_MODE="rand"      # DP 失败处理模式: ld_pate, rand, stop
+# DP Parameter Configuration
+N_SPLIT=30            # Number of voters / prompt variants
+DP_EPS=5.0            # DP epsilon per token
+DP_DELTA=1e-6         # DP delta per token
+TARGET_EPS=200.0      # Total epsilon budget upper bound
+TARGET_DELTA=2e-4     # Total delta budget upper bound
+MAX_TOKENS=50         # Maximum number of tokens to generate
+FAIL_MODE="rand"      # DP failure handling mode: ld_pate, rand, stop
 
 python pipeline_DP.py \
     --dataset "./datasets/mini_trec_covid.json" \

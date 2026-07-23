@@ -12,8 +12,8 @@ from . import prompts as pt
 
 class BaseEngine(ABC):
     """
-    所有 RAG 引擎的抽象基类 (Standard RAG, Graph RAG, etc.)
-    集成安全护栏 (Security Guardrails)
+    Abstract base class for all RAG engines (Standard RAG, Graph RAG, etc.)
+    Integrated with Security Guardrails
     """
 
     def __init__(
@@ -21,8 +21,8 @@ class BaseEngine(ABC):
         llm: BaseLLM, 
         embedding: BaseEmbedding, 
         reranker: BaseReranker,
-        top_p: int,   # 检索数
-        top_k: int,   # 重排数
+        top_p: int,   # Retrieval count
+        top_k: int,   # Rerank count
         knowledge_path: str,
     ):
         self.llm = llm
@@ -33,16 +33,16 @@ class BaseEngine(ABC):
         self.data_loader = DatasetLoader()
         self.knowledge_path = knowledge_path
         
-        # 安全配置阈值
-        self.rouge_threshold = 0.4  # 泄露阈值：如果生成的答案与检索块重复度超过 40% 则拦截
+        # Security configuration threshold
+        self.rouge_threshold = 0.4  # Leakage threshold: block if generated answer exceeds 40% similarity with retrieved chunks
         
-        # 定义存储根目录
+        # Define storage root directory
         self.storage_root = "storage"
         if not os.path.exists(self.storage_root):
             os.makedirs(self.storage_root)
 
-    # 获取索引存储路径
-    # 根据引擎类型、数据集名称、Embedding 模型信息构建唯一路径
+    # Get index storage path
+    # Construct unique path based on engine type, dataset name, and Embedding model info
     def get_index_path(self) -> str:
         engine_type = self.__class__.__name__.lower().replace("engine", "").replace("rag", "_rag")
         dataset_name = os.path.basename(self.knowledge_path).split('.')[0]
@@ -52,13 +52,13 @@ class BaseEngine(ABC):
         full_path = os.path.join(self.storage_root, engine_type, dir_name)
         return full_path
 
-    # 构建或加载索引
+    # Build or load index
     def index(self):
         persist_dir = self.get_index_path()
         print(f"Target Index Path: {persist_dir}")
 
-        # 检查索引是否存在
-        # 如果存在则加载，否则构建
+        # Check if index exists
+        # Load if exists, otherwise build
         if self._check_index_exists(persist_dir):
             print(f"Index found. Loading...")
             self._load_index(persist_dir)
@@ -68,42 +68,35 @@ class BaseEngine(ABC):
             self._build_index(docs, persist_dir)
             print(f"[{self.__class__.__name__}] Index built and saved to {persist_dir}")
 
-    # 输入检测
+    # Input detection
     def safety_check_query(self, query: str) -> bool:
         """
-        输入护栏：检测恶意意图
-        返回: True (安全), False (不安全)
+        Input guardrail: detect malicious intent
+        Returns: True (safe), False (unsafe)
         """
-        # 1. 规则检测 (非法语句)
+        # 1. Rule-based detection (illegal statements)
         if not self._detect_intent_keywords(query):
             print("[Security] Blocked by keyword filter.")
             return False
-            
-        
-        # # 2. LLM 意图判断 
-        # # 待更新提示词
-        # if not self._detect_intent_llm(query):
-        #     print("[Security] Blocked by LLM intent detection.")
-        #     return False
-            
+
         return True
 
-    # 输出检测
+    # Output detection
     def safety_check_response(self, response: str, context_str: str) -> bool:
         """
-        输出护栏：检测数据泄露
-        返回: True (安全), False (存在泄露)
+        Output guardrail: detect data leakage
+        Returns: True (safe), False (leakage detected)
         """
-        # 逐字泄露检测 (Rouge-L)
+        # Character-by-character leakage detection (Rouge-L)
         f1_score = self._calculate_rouge_l_f1(response, context_str)
         if f1_score > self.rouge_threshold:
             print(f"[Security] Blocked by Leakage Detection. Rouge-L F1: {f1_score:.4f} > {self.rouge_threshold}")
             return False
         return True
 
-    # 非法语句检测
+    # Illegal statement detection
     def _detect_intent_keywords(self, query: str) -> bool:
-        """简单的关键词黑名单匹配"""
+        """Simple keyword blacklist matching"""
         blacklist = [
             "ignore previous instructions", "system prompt", "upstream instructions",
             "forget your rules", "repeat the following", "output your initialization"
@@ -114,27 +107,27 @@ class BaseEngine(ABC):
                 return False
         return True
     
-    # LLM 意图检测
+    # LLM intent detection
     def _detect_intent_llm(self, query: str) -> bool:
-        """利用 LLM 判断用户是否尝试进行 Prompt Injection"""
+        """Use LLM to determine if user attempts Prompt Injection"""
 
         prompt = pt.INTENT_DETECTION_PROMPT.format(query=query)
         
         try:
-            # 使用简单的 generate 调用
+            # Use simple generate call
             judgment = self.llm.generate(prompt).strip().lower()
             is_MALICIOUS = "yes" in judgment
-            return  not is_MALICIOUS  # 返回 True 表示安全
+            return  not is_MALICIOUS  # Return True means safe
         except Exception as e:
             print(f"[Warning] Intent check failed: {e}. Defaulting to safe.")
             return True
 
     def _calculate_rouge_l_f1(self, prediction: str, target: str) -> float:
         """
-        计算 Rouge-L F1 分数 (最长公共子序列)
-        手动实现以避免引入 rouge-score 依赖，确保环境兼容性。
+        Calculate Rouge-L F1 score (Longest Common Subsequence)
+        Manual implementation to avoid rouge-score dependency, ensure environment compatibility.
         """
-        # 简单的基于字符或单词的切分
+        # Simple tokenization based on characters or words
         def tokenize(text):
             return re.findall(r'\w+', text.lower())
 
@@ -144,7 +137,7 @@ class BaseEngine(ABC):
         if not pred_tokens or not target_tokens:
             return 0.0
 
-        # 动态规划计算 LCS 长度
+        # Dynamic programming to compute LCS length
         m, n = len(pred_tokens), len(target_tokens)
         dp = [[0] * (n + 1) for _ in range(m + 1)]
 
@@ -157,7 +150,7 @@ class BaseEngine(ABC):
         
         lcs_len = dp[m][n]
 
-        # 计算 Precision, Recall, F1
+        # Calculate Precision, Recall, F1
         precision = lcs_len / m if m > 0 else 0
         recall = lcs_len / n if n > 0 else 0
         

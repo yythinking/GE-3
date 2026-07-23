@@ -1,1 +1,31 @@
+# Environment and secrets
 .env
+*.env
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+dist/
+build/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Runtime artifacts
+output/
+storage/
+plans/
+*.sqlite3
+
+# OS
+.DS_Store
+Thumbs.db
+
+
+*.pdf
+*.tex

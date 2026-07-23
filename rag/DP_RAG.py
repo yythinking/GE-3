@@ -1,15 +1,15 @@
-# 0501_XR_MtRAG/rag/DP_RAG.py
+# rag/DP_RAG.py
 """
-差分隐私 RAG 引擎
-基于 DPRAG 项目的 DP VoteRAG 机制实现
+Differential Privacy RAG Engine
+Based on DPRAG project's DP VoteRAG mechanism implementation
 
-核心思路（对齐 DPRAG 原生实现）：
-1. 检索文档后，将文档随机打乱，构建 n_split 个 prompt 变体
-2. 每个 prompt 变体独立调用 LLM 生成回答
-3. 对所有回答进行 tokenization 对齐
-4. 在 token 级别使用 LDGumbel DP majority vote 选择最终 token
-5. Detokenize 得到最终回答
-6. 追踪 DP 隐私预算
+Core Concept (aligned with DPRAG native implementation):
+1. After retrieving documents, shuffle them randomly to construct n_split prompt variants
+2. Each prompt variant independently calls LLM to generate answers (voters)
+3. Align all answers via tokenization
+4. Use LDGumbel DP majority vote at token level to select final token
+5. Detokenize to get final answer
+6. Track DP privacy budget
 """
 
 import os
@@ -33,26 +33,26 @@ from .dp_mechanisms import (
 
 class DPRAGEngine(BaseEngine):
     """
-    差分隐私 RAG 引擎（对齐 DPRAG 原生 VoteRAG 机制）
+    Differential Privacy RAG Engine (aligned with DPRAG native VoteRAG mechanism)
 
-    在答案生成阶段使用 DP 机制保护隐私：
-    1. 检索文档后，通过打乱文档顺序构建 n_split 个 prompt 变体
-    2. 每个 prompt 变体独立调用 LLM 生成回答（voter）
-    3. 对所有 voter 回答进行 tokenization
-    4. 在每个 token 位置使用 DP majority vote 选择最终 token
-    5. Detokenize 得到最终回答
-    6. 追踪 DP 隐私预算消耗
+    Uses DP mechanism to protect privacy during answer generation:
+    1. After retrieval, construct n_split prompt variants by shuffling document order
+    2. Each prompt variant independently calls LLM to generate answers (voters)
+    3. Tokenize all voter answers
+    4. Use DP majority vote at each token position to select final token
+    5. Detokenize to get final answer
+    6. Track DP privacy budget consumption
 
-    参数:
-        n_split: prompt 变体数量 / voter 数量 (默认 50)
-        dp_eps: 每个 token 的 DP epsilon (默认 2.0)
-        dp_delta: 每个 token 的 DP delta (默认 1e-5)
-        target_eps: 总 epsilon 预算上限 (默认 1000.0)
-        target_delta: 总 delta 预算上限 (默认 1.0)
-        max_tokens: 生成的最大 token 数 (默认 100)
-        fail_mode: DP 失败处理模式 (默认 'ld_pate')
-        use_parallel: 是否使用并发执行 voter 生成 (默认 True)
-        max_workers: 并发执行的最大 worker 数量 (默认 20)
+    Parameters:
+        n_split: Number of prompt variants / voters (default 50)
+        dp_eps: DP epsilon per token (default 2.0)
+        dp_delta: DP delta per token (default 1e-5)
+        target_eps: Total epsilon budget upper bound (default 1000.0)
+        target_delta: Total delta budget upper bound (default 1.0)
+        max_tokens: Maximum tokens to generate (default 100)
+        fail_mode: DP failure handling mode (default 'ld_pate')
+        use_parallel: Whether to use parallel execution for voter generation (default True)
+        max_workers: Maximum number of parallel workers (default 20)
     """
 
     def __init__(
@@ -81,7 +81,7 @@ class DPRAGEngine(BaseEngine):
         self.use_parallel = use_parallel
         self.max_workers = max_workers
 
-        # DP 机制：k_bar 与 n_split 对齐（DPRAG 原生设置）
+        # DP mechanism: k_bar aligned with n_split (DPRAG native setting)
         self._dp_engine = LDGumbelMechanism(
             eps=dp_eps,
             delta=dp_delta,
@@ -91,10 +91,10 @@ class DPRAGEngine(BaseEngine):
             fail_mode=fail_mode,
         )
 
-        # 词表大小（从 LLM 获取）
+        # Vocabulary size (from LLM)
         self._vocab_size = self.llm.get_vocab_size() if hasattr(self.llm, 'get_vocab_size') else 100256
 
-        # 追踪 DP 使用情况
+        # Track DP usage
         self._dp_stats = {
             'total_tokens_generated': 0,
             'total_vote_calls': 0,
@@ -106,7 +106,7 @@ class DPRAGEngine(BaseEngine):
         self.collection_name = "dp_rag_collection"
 
     # ──────────────────────────────────────────────
-    # 索引管理（与 StandardRAGEngine 一致）
+    # Index Management (consistent with StandardRAGEngine)
     # ──────────────────────────────────────────────
 
     def _check_index_exists(self, persist_dir: str) -> bool:
@@ -131,7 +131,7 @@ class DPRAGEngine(BaseEngine):
         )
 
     # ──────────────────────────────────────────────
-    # 检索（与 StandardRAGEngine 一致）
+    # Retrieval (consistent with StandardRAGEngine)
     # ──────────────────────────────────────────────
 
     def search(self, query: str) -> List[Document]:
@@ -148,34 +148,34 @@ class DPRAGEngine(BaseEngine):
         return final_docs
 
     # ──────────────────────────────────────────────
-    # 端到端回答
+    # End-to-end Answer
     # ──────────────────────────────────────────────
 
     def answer(self, query: str) -> Tuple[str, List[Document]]:
         """
-        端到端 RAG + DP 生成
+        End-to-end RAG + DP Generation
 
-        流程：
-        1. 意图检测
-        2. 检索相关文档
-        3. 构建 n_split 个 prompt 变体（打乱文档顺序）
-        4. 使用 DP ensemble 生成答案
-        5. 安全检测
+        Flow:
+        1. Intent detection
+        2. Retrieve relevant documents
+        3. Construct n_split prompt variants (shuffle document order)
+        4. Use DP ensemble to generate answer
+        5. Safety check
         """
-        # 1. 意图检测
+        # 1. Intent detection
         if not self.safety_check_query(query):
             return "Unknown.Intent", None
 
-        # 2. 检索
+        # 2. Retrieval
         context_docs = self.search(query)
 
-        # 3. 构建 n_split 个 prompt 变体
+        # 3. Construct n_split prompt variants
         prompt_list = self._build_prompt_variants(query, context_docs)
 
-        # 4. DP ensemble 生成
+        # 4. DP ensemble generation
         response = self._dp_ensemble_generate(prompt_list)
 
-        # 5. 安全检测
+        # 5. Safety check
         context_str = "\n\n".join([
             f"Document {i+1}: {doc.page_content}"
             for i, doc in enumerate(context_docs)
@@ -186,26 +186,26 @@ class DPRAGEngine(BaseEngine):
         return response, context_docs
 
     # ──────────────────────────────────────────────
-    # Prompt 变体构建（DPRAG 原生方式）
+    # Prompt Variant Construction (DPRAG native method)
     # ──────────────────────────────────────────────
 
     def _build_prompt_variants(self, query: str, docs: List[Document]) -> List[str]:
         """
-        构建 n_split 个 prompt 变体
+        Construct n_split prompt variants
 
-        对齐 DPRAG 原生实现：
-        - 将检索到的文档内容提取出来
-        - 随机打乱文档顺序
-        - 将文档分成 n_split 组，每组包含若干文档
-        - 为每组构建一个独立的 prompt
+        Aligned with DPRAG native implementation:
+        - Extract retrieved document content
+        - Randomly shuffle document order
+        - Split documents into n_split groups, each containing several documents
+        - Construct independent prompt for each group
 
-        当 n_split > 文档数时，每个 voter 仍然获得所有文档，
-        但文档顺序不同（通过多次独立打乱实现）。
+        When n_split > number of documents, each voter still gets all documents,
+        but with different order (achieved through multiple independent shuffles).
         """
-        # 提取文档文本
+        # Extract document text
         doc_texts = [doc.page_content for doc in docs]
 
-        # 选择提示模板
+        # Select prompt template
         if "HP1_5ch" in self.knowledge_path:
             prompt_template = pt.RAG_PROMPT_TEMPLATE_HP
         elif "HealthCareMagic" in self.knowledge_path:
@@ -216,14 +216,14 @@ class DPRAGEngine(BaseEngine):
         prompt_list = []
 
         if len(doc_texts) == 0:
-            # 无文档时，所有 voter 使用相同的无上下文 prompt
+            # No documents: all voters use same prompt without context
             for _ in range(self.n_split):
                 prompt_list.append(prompt_template.format(context="", question=query))
             return prompt_list
 
         if self.n_split <= len(doc_texts):
-            # voter 数 <= 文档数：每个 voter 获得不同的文档子集
-            # 将文档分成 n_split 组
+            # Number of voters <= number of documents: each voter gets different document subset
+            # Split documents into n_split groups
             shuffled_texts = doc_texts.copy()
             random.shuffle(shuffled_texts)
 
@@ -231,7 +231,7 @@ class DPRAGEngine(BaseEngine):
             for split_id in range(self.n_split):
                 start = split_id * docs_per_split
                 end = min(start + docs_per_split, len(shuffled_texts))
-                # 最后一个 split 取剩余所有文档
+                # Last split gets all remaining documents
                 if split_id == self.n_split - 1:
                     end = len(shuffled_texts)
 
@@ -244,7 +244,7 @@ class DPRAGEngine(BaseEngine):
                     prompt_template.format(context=context_str, question=query)
                 )
         else:
-            # voter 数 > 文档数：每个 voter 获得所有文档，但顺序不同
+            # Number of voters > number of documents: each voter gets all documents, but in different order
             for _ in range(self.n_split):
                 shuffled = doc_texts.copy()
                 random.shuffle(shuffled)
@@ -259,19 +259,19 @@ class DPRAGEngine(BaseEngine):
         return prompt_list
 
     # ──────────────────────────────────────────────
-    # DP Ensemble 生成（核心机制）
+    # DP Ensemble Generation (Core Mechanism)
     # ──────────────────────────────────────────────
 
     def _voter_generate(self, prompt: str, voter_id: int) -> Tuple[int, str]:
         """
-        单个 voter 的 LLM 生成任务（用于并发执行）
+        Single voter LLM generation task (for parallel execution)
 
         Args:
-            prompt: 输入的 prompt
-            voter_id: voter 编号
+            prompt: Input prompt
+            voter_id: Voter ID
 
         Returns:
-            (voter_id, 生成的回答)
+            (voter_id, generated answer)
         """
         try:
             response = self.llm.generate(prompt)
@@ -282,23 +282,23 @@ class DPRAGEngine(BaseEngine):
 
     def _dp_ensemble_generate(self, prompt_list: List[str]) -> str:
         """
-        使用 DP 机制进行 ensemble 生成
+        Ensemble generation using DP mechanism
 
-        对齐 DPRAG 原生实现流程：
-        1. 每个 prompt 变体独立调用 LLM 生成回答（支持并发）
-        2. Tokenize 所有回答
-        3. 在每个 token 位置使用 DP majority vote
-        4. Detokenize 得到最终回答
+        Aligned with DPRAG native implementation flow:
+        1. Each prompt variant independently calls LLM to generate answers (supports parallel)
+        2. Tokenize all answers
+        3. Use DP majority vote at each token position
+        4. Detokenize to get final answer
 
-        注意：DPRAG 原生使用 vllm 进行 token-by-token 生成，
-        我们的 LLM 接口只支持 generate(prompt) -> str，
-        因此采用"先生成完整回答，后 DP 投票"的策略。
+        Note: DPRAG native uses vllm for token-by-token generation,
+        our LLM interface only supports generate(prompt) -> str,
+        so we use "first generate complete answer, then DP vote" strategy.
         """
-        # 1. 每个 voter 独立生成回答（支持并发加速）
+        # 1. Each voter independently generates answer (supports parallel acceleration)
         candidates = [None] * len(prompt_list)
 
         if self.use_parallel:
-            # 并发模式：使用 ThreadPoolExecutor 并行调用所有 voter
+            # Parallel mode: use ThreadPoolExecutor to parallelize all voter calls
             with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
                 future_to_idx = {
                     executor.submit(self._voter_generate, prompt, i): i
@@ -313,7 +313,7 @@ class DPRAGEngine(BaseEngine):
                         print(f"[DP-RAG] Voter {idx} failed: {e}")
                         candidates[idx] = ""
         else:
-            # 串行模式：保持原有逻辑
+            # Serial mode: keep original logic
             for i, prompt in enumerate(prompt_list):
                 try:
                     response = self.llm.generate(prompt)
@@ -322,7 +322,7 @@ class DPRAGEngine(BaseEngine):
                     print(f"[DP-RAG] Voter {i} generation failed: {e}")
                     candidates[i] = ""
 
-        # 过滤掉空候选
+        # Filter out empty candidates
         non_empty_candidates = [c for c in candidates if c and c.strip()]
         if not non_empty_candidates:
             return ""
@@ -330,12 +330,12 @@ class DPRAGEngine(BaseEngine):
         if empty_count > 0:
             print(f"[DP-RAG] {empty_count} voters produced empty responses (parallel={self.use_parallel})")
 
-        # 2. Tokenize 所有候选
+        # 2. Tokenize all candidates
         tokenized_candidates = []
         for candidate in non_empty_candidates:
             try:
                 tokens = self.llm.tokenize(candidate)
-                # 截断到 max_tokens 长度
+                # Truncate to max_tokens length
                 tokens = tokens[:self.max_tokens]
                 tokenized_candidates.append(tokens)
             except Exception as e:
@@ -343,11 +343,11 @@ class DPRAGEngine(BaseEngine):
                 continue
 
         if not tokenized_candidates:
-            # Tokenization 全部失败，回退到简单投票
+            # All tokenization failed, fallback to simple vote
             print("[DP-RAG] All tokenization failed, using simple majority vote")
             return self._simple_majority_vote(non_empty_candidates)
 
-        # 3. Token 级别 DP 投票
+        # 3. Token-level DP voting
         final_tokens = self._token_level_dp_vote(tokenized_candidates)
 
         if not final_tokens:
@@ -363,25 +363,25 @@ class DPRAGEngine(BaseEngine):
         return final_response
 
     # ──────────────────────────────────────────────
-    # Token 级别 DP 投票
+    # Token-level DP Voting
     # ──────────────────────────────────────────────
 
     def _token_level_dp_vote(self, tokenized_candidates: List[List[int]]) -> List[int]:
         """
-        在每个 token 位置使用 DP majority vote 选择最终 token
+        Use DP majority vote at each token position to select final token
 
-        对齐 DPRAG 原生的 get_majority_token_vote 逻辑：
-        - 首先尝试 LDGumbel DP 投票
-        - 如果失败且 fail_mode='ld_pate'，尝试 1-excluded LD（k_bar=dim-1）
-        - 如果仍然失败，停止生成
-        - 如果 DP 预算超支，停止生成
+        Aligned with DPRAG native get_majority_token_vote logic:
+        - First try LDGumbel DP voting
+        - If fails and fail_mode='ld_pate', try 1-excluded LD (k_bar=dim-1)
+        - If still fails, stop generation
+        - If DP budget exceeded, stop generation
         """
         max_len = max(len(tokens) for tokens in tokenized_candidates)
         n_voters = len(tokenized_candidates)
         final_tokens = []
 
-        # 为每次 answer 调用创建新的 DP engine 实例
-        # （避免跨查询的隐私预算累积问题，每次查询独立计算）
+        # Create new DP engine instance for each answer call
+        # (Avoid cross-query privacy budget accumulation, calculate independently per query)
         dp_engine = LDGumbelMechanism(
             eps=self._dp_engine.eps,
             delta=self._dp_engine.delta,
@@ -392,25 +392,25 @@ class DPRAGEngine(BaseEngine):
         )
 
         for pos in range(max_len):
-            # 收集该位置所有 voter 的 token
+            # Collect all voter tokens at this position
             tokens_at_pos = []
             for tokens in tokenized_candidates:
                 if pos < len(tokens):
                     tokens_at_pos.append(tokens[pos])
-                # 超出长度的 voter 不参与该位置投票（不 padding）
+                # Voters exceeding length don't participate in this position vote (no padding)
 
             if not tokens_at_pos:
                 break
 
             tokens_tensor = torch.tensor(tokens_at_pos)
 
-            # DP 投票（对齐 DPRAG 的 get_majority_token_vote）
+            # DP voting (aligned with DPRAG get_majority_token_vote)
             selected_token = self._get_majority_token_vote(
                 tokens_tensor, dp_engine
             )
 
             if selected_token is None:
-                # DP 失败或预算超支，停止生成
+                # DP failure or budget exceeded, stop generation
                 print(f"[DP-RAG] DP vote failed at position {pos}, stopping generation")
                 self._dp_stats['dp_failures'] += 1
                 break
@@ -420,7 +420,7 @@ class DPRAGEngine(BaseEngine):
 
         self._dp_stats['total_tokens_generated'] += len(final_tokens)
 
-        # 记录 DP 预算消耗
+        # Record DP budget consumption
         eps, delta = dp_engine.get_dp_expense()
         print(f"[DP-RAG] DP expense for this query: eps={eps:.4f}, delta={delta:.6g}")
 
@@ -428,15 +428,15 @@ class DPRAGEngine(BaseEngine):
 
     def _get_majority_token_vote(self, tokens_tensor: torch.Tensor, dp_engine: LDGumbelMechanism) -> Optional[int]:
         """
-        对齐 DPRAG 原生的 get_majority_token_vote 逻辑
+        Aligned with DPRAG native get_majority_token_vote logic
 
-        处理流程：
-        1. 尝试 DP majority vote
-        2. 如果 NotFoundLDTop1：
-           - ld_pate 模式：尝试 1-excluded LD (k_bar=dim-1)
-           - rand 模式：随机选择
-           - stop 模式：停止
-        3. 如果 DPExpenseOverflow：停止
+        Processing flow:
+        1. Try DP majority vote
+        2. If NotFoundLDTop1:
+           - ld_pate mode: try 1-excluded LD (k_bar=dim-1)
+           - rand mode: random selection
+           - stop mode: stop
+        3. If DPExpenseOverflow: stop
         """
         try:
             selected_token, _ = majority_vote(
@@ -447,7 +447,7 @@ class DPRAGEngine(BaseEngine):
             return selected_token
         except NotFoundLDTop1:
             if dp_engine.fail_mode == 'ld_pate':
-                # 1-excluded LD：使用更小的 k_bar 提高成功率
+                # 1-excluded LD: use smaller k_bar to improve success rate
                 try:
                     selected_token, _ = majority_vote(
                         tokens_tensor,
@@ -472,30 +472,30 @@ class DPRAGEngine(BaseEngine):
             return None
 
     # ──────────────────────────────────────────────
-    # 简单多数投票（回退方案）
+    # Simple Majority Vote (Fallback)
     # ──────────────────────────────────────────────
 
     def _simple_majority_vote(self, candidates: List[str]) -> str:
         """
-        简单多数投票作为 DP 生成失败时的回退
+        Simple majority vote as fallback when DP generation fails
 
-        返回出现频率最高的候选回答
+        Returns the most frequent candidate answer
         """
         if not candidates:
             return ""
 
-        # 统计每个回答的出现频率
+        # Count frequency of each answer
         from collections import Counter
         counter = Counter(candidates)
         most_common = counter.most_common(1)[0][0]
         return most_common
 
     # ──────────────────────────────────────────────
-    # DP 统计与重置
+    # DP Statistics and Reset
     # ──────────────────────────────────────────────
 
     def get_dp_stats(self) -> dict:
-        """返回 DP 使用统计"""
+        """Return DP usage statistics"""
         self._dp_stats['dp_engine_state'] = {
             'total_queries': self._dp_engine.total_queries,
             'total_k': self._dp_engine.total_k,
@@ -503,7 +503,7 @@ class DPRAGEngine(BaseEngine):
         return self._dp_stats.copy()
 
     def reset_dp_engine(self):
-        """重置 DP 引擎状态"""
+        """Reset DP engine state"""
         self._dp_engine = LDGumbelMechanism(
             eps=self._dp_engine.eps,
             delta=self._dp_engine.delta,

@@ -1,27 +1,27 @@
 #!/bin/bash
-# run_sage.sh - SAGE RAG 攻击测试管道启动脚本
-# 使用SAGE合成数据保护，不包含差分隐私(DP)机制
+# run_sage.sh - SAGE RAG Attack Testing Pipeline
+# Uses SAGE synthetic data protection (no differential privacy)
 
 # =============================================================================
-# SAGE 配置
+# SAGE Configuration
 # =============================================================================
-SYNTHETIC_MODE="agent2"                    # 合成方法: sync (基础) / agent2 (Agent精炼)
-SYNTHETIC_CACHE_DIR="./storage/synthetic_data"  # 合成数据缓存目录
+SYNTHETIC_MODE="agent2"                    # Synthetic method: sync (basic) / agent2 (agent-refined)
+SYNTHETIC_CACHE_DIR="./storage/synthetic_data"  # Synthetic data cache directory
 
 # =============================================================================
-# 基础配置
+# Base Configuration
 # =============================================================================
-DATASET="./datasets/mini_trec_covid.json"  # 默认数据集
-LLM="llama3.1:8b"                          # LLM 模型
-MODE="epoch"                               # 运行模式: epoch / chunk
-LIMIT=2                                    # 限制数值
-TP=10                                      # RAG检索 Top P
-TK=10                                      # RAG检索 Top K
+DATASET="./datasets/mini_trec_covid.json"  # Default dataset
+LLM="llama3.1:8b"                          # LLM model
+MODE="epoch"                               # Run mode: epoch / chunk
+LIMIT=2                                    # Limit value
+TP=10                                      # Retrieval Top P
+TK=10                                      # Retrieval Top K
 STORAGE_BASE="./storage/SAGE_rag"
 OUTPUT_BASE="./output"
 
 # =============================================================================
-# 运行命令
+# Run Command
 # =============================================================================
 echo "================================================"
 echo "SAGE RAG Attack Pipeline (No DP)"
@@ -47,23 +47,23 @@ python pipeline_SAGE.py \
     --synthetic_cache_dir "${SYNTHETIC_CACHE_DIR}"
 
 # =============================================================================
-# 脚本用法说明:
+# Usage:
 # 
-# 1. 基础使用 (使用默认配置):
+# 1. Basic usage (default configuration):
 #    ./run_sage.sh
 #
-# 2. 修改数据集:
+# 2. Change dataset:
 #    DATASET="./datasets/mini_HealthCareMagic.json" ./run_sage.sh
 #
-# 3. 修改合成方法 (需要Agent精炼):
+# 3. Change synthetic method (agent-refined):
 #    SYNTHETIC_MODE="agent2" ./run_sage.sh
 #
-# 4. 强制重建合成数据:
+# 4. Force rebuild synthetic data:
 #    python pipeline_SAGE.py ... --rebuild_synthetic ...
 #
-# 5. 查看所有参数:
+# 5. View all parameters:
 #    python pipeline_SAGE.py --help
 #
-# 6. 使用不同的LLM模型:
+# 6. Use a different LLM model:
 #    LLM="gpt-4" ./run_sage.sh
 # =============================================================================

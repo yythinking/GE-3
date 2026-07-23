@@ -1,12 +1,12 @@
 # rag/sage_engine.py
 """
-SAGE合成数据生成引擎
-基于 "Mitigating the Privacy Issues in Retrieval-Augmented Generation (RAG) via Pure Synthetic Data"
+SAGE Synthetic Data Generation Engine
+Based on "Mitigating the Privacy Issues in Retrieval-Augmented Generation (RAG) via Pure Synthetic Data"
 
-核心功能:
-1. Stage 1: 属性提取与合成数据生成
-2. Stage 2 (可选): Agent迭代精炼增强隐私保护
-3. 构建合成数据向量索引用于RAG检索
+Core Functions:
+1. Stage 1: Attribute Extraction and Synthetic Data Generation
+2. Stage 2 (Optional): Agent Iterative Refinement for Enhanced Privacy Protection
+3. Build synthetic data vector index for RAG Retrieval
 """
 
 import os
@@ -25,16 +25,16 @@ from . import prompts as pt
 
 
 # =============================================================================
-# SAGE Prompt 模板 (对齐SAGE原始实现)
+# SAGE Prompt Templates (aligned with SAGE original implementation)
 # =============================================================================
 
 def get_attributes_prompt(input_context: str, dataset_type: str = "chat") -> str:
     """
-    Stage 1 - Step 1: 属性提取Prompt
+    Stage 1 - Step 1: Attribute Extraction Prompt
     
-    根据数据集类型选择对应模板:
-    - chat: 医疗对话数据集 (Patient-Doctor)
-    - wiki/doc: 通用文本数据集
+    Select corresponding template based on dataset type:
+    - chat: Medical dialogue dataset (Patient-Doctor)
+    - wiki/doc: General text dataset
     """
     if dataset_type in ["chat", "chatdoctor", "healthcaremagic"]:
         return f"""Please summarize the key points from the following Doctor-Patient conversation:
@@ -94,7 +94,7 @@ def get_attributes_prompt(input_context: str, dataset_type: str = "chat") -> str
         Please provide a concise summary for each attribute, capturing the most important information related to that attribute. And remember to maintain logical order and accuracy.
         """
     else:
-        # 默认通用模板
+        # Default general template
         return f"""Please summarize the key points from the following text:
 
 
@@ -111,9 +111,9 @@ def get_attributes_prompt(input_context: str, dataset_type: str = "chat") -> str
 
 def get_synthetic_prompt(input_attributes: str, dataset_type: str = "chat") -> str:
     """
-    Stage 1 - Step 2: 合成数据生成Prompt
+    Stage 1 - Step 2: Synthetic Data Generation Prompt
     
-    根据数据集类型选择对应模板生成合成数据
+    Select corresponding template based on dataset type to generate synthetic data
     """
     if dataset_type in ["wiki", "doc", "trec", "scidocs"]:
         return f"""Here is a summary of the key points:
@@ -146,7 +146,7 @@ def get_synthetic_prompt(input_attributes: str, dataset_type: str = "chat") -> s
 
 def get_paraphrase_prompt(input_context: str, input_query: str) -> str:
     """
-    改写Prompt (对比基线方法)
+    Paraphrase Prompt (for baseline comparison)
     """
     return f"""Given the following context, extract the useful or important part of the Context.
     
@@ -161,13 +161,13 @@ def get_paraphrase_prompt(input_context: str, input_query: str) -> str:
 
 
 # =============================================================================
-# LLM客户端封装
+# LLM Client Wrapper
 # =============================================================================
 
 class SAGEClientWrapper:
     """
-    SAGE LLM客户端封装
-    支持多种LLM类型: Ollama, OpenAI兼容, Gemini等
+    SAGE LLM Client Wrapper
+    Supports multiple LLM types: Ollama, OpenAI-compatible, Gemini, etc.
     """
     
     def __init__(self, llm: BaseLLM, model_name: str = "default"):
@@ -178,23 +178,23 @@ class SAGEClientWrapper:
     def generate(self, prompt: str, system_content: str = "You are a helpful assistant.",
                  max_tokens: int = 256, temperature: float = 0.6) -> str:
         """
-        调用LLM生成内容
+        Call LLM to generate content
         
-        对齐项目现有接口：generate() 只接受单个 prompt 参数
-        系统提示通过拼接方式注入
+        Aligned with project existing interface: generate() only accepts single prompt parameter
+        System prompt injected via concatenation
         
         Args:
-            prompt: 用户输入prompt
-            system_content: 系统提示 (通过拼接方式注入)
-            max_tokens: 最大生成token数 (保留参数，实际不传递)
-            temperature: 生成温度 (保留参数，实际不传递)
+            prompt: User input prompt
+            system_content: System prompt (injected via concatenation)
+            max_tokens: Maximum generated tokens (reserved parameter, not actually passed)
+            temperature: Generation temperature (reserved parameter, not actually passed)
             
         Returns:
-            生成的文本
+            Generated text
         """
         try:
-            # 项目中的generate()只接受单个prompt参数
-            # 将系统提示拼接到prompt前面
+            # generate() in project only accepts single prompt parameter
+            # Concatenate system prompt to front of prompt
             full_prompt = f"{system_content}\n\n{prompt}"
             
             response = self.llm.generate(full_prompt)
@@ -219,32 +219,32 @@ class SAGEClientWrapper:
 
 
 # =============================================================================
-# SAGE主引擎类
+# SAGE Main Engine Class
 # =============================================================================
 
 class SAGEEngine:
     """
-    SAGE合成数据生成引擎
+    SAGE Synthetic Data Generation Engine
     
-    提供两种使用模式:
-    1. sync模式: Stage 1 (属性提取 + 合成生成)
-    2. agent2模式: Stage 1 + Stage 2 (Agent迭代精炼)
+    Provides two usage modes:
+    1. sync mode: Stage 1 (Attribute Extraction + Synthetic Generation)
+    2. agent2 mode: Stage 1 + Stage 2 (Agent Iterative Refinement)
     
-    用法示例:
+    Usage Example:
         sage = SAGEEngine(
             llm=llm,
             embedding=embedding,
             original_data_path="./datasets/mini_HealthCareMagic.json"
         )
         
-        # 一次性预处理 (可选, 也可以lazy生成)
+        # One-time preprocessing (optional, can also generate on-demand)
         sage.preprocess_and_build_index()
         
-        # 检索时使用
+        # Use at retrieval time
         docs = sage.search("What are the symptoms of diabetes?")
     """
     
-    # 数据集类型自动识别映射
+    # Dataset type auto-detection mapping
     DATASET_TYPE_KEYWORDS = {
         "chat": ["chat", "healthcaremagic", "healthcare", "medical", "doctor", "patient"],
         "wiki": ["wiki", "trec", "covid", "scidocs", "nfcopurs"],
@@ -256,46 +256,46 @@ class SAGEEngine:
         embedding: BaseEmbedding,
         original_data_path: str,
         cache_dir: str = "./storage/synthetic_data",
-        attr_llm: BaseLLM = None,  # 属性提取LLM (可与synth_llm相同)
-        synth_llm: BaseLLM = None,  # 合成生成LLM
+        attr_llm: BaseLLM = None,  # Attribute extraction LLM (can be same as synth_llm)
+        synth_llm: BaseLLM = None,  # Synthetic generation LLM
         attr_model_name: str = "attributes-extractor",
         synth_model_name: str = "synthetic-generator",
     ):
         """
-        初始化SAGE引擎
+        Initialize SAGE engine
         
         Args:
-            llm: 默认LLM实例
-            embedding: Embedding模型
-            original_data_path: 原始数据集路径
-            cache_dir: 合成数据缓存目录
-            attr_llm: 属性提取专用LLM (默认为llm)
-            synth_llm: 合成生成专用LLM (默认为llm)
-            attr_model_name: 属性提取模型名称
-            synth_model_name: 合成生成模型名称
+            llm: Default LLM instance
+            embedding: Embedding model
+            original_data_path: Original dataset path
+            cache_dir: Synthetic data cache directory
+            attr_llm: Attribute extraction dedicated LLM (default: llm)
+            synth_llm: Synthetic generation dedicated LLM (default: llm)
+            attr_model_name: Attribute extraction model name
+            synth_model_name: Synthetic generation model name
         """
         self.llm = llm
         self.embedding = embedding
         self.original_data_path = original_data_path
         
-        # LLM客户端
+        # LLM clients
         self.attr_llm = attr_llm if attr_llm else llm
         self.synth_llm = synth_llm if synth_llm else llm
         
         self.attr_client = SAGEClientWrapper(self.attr_llm, attr_model_name)
         self.synth_client = SAGEClientWrapper(self.synth_llm, synth_model_name)
         
-        # 缓存配置
+        # Cache configuration
         self.cache_dir = cache_dir
         self._ensure_cache_dir()
         
-        # 数据集信息
+        # Dataset information
         self.dataset_name = os.path.basename(original_data_path).split('.')[0]
         self.dataset_type = self._detect_dataset_type()
         self._hash_id = self._compute_data_hash()
         
-        # 缓存路径 (包含synthetic_mode确保sync/agent2数据隔离)
-        self.synthetic_mode = "sync"  # 默认值
+        # Cache paths (include synthetic_mode to ensure sync/agent2 data isolation)
+        self.synthetic_mode = "sync"  # Default value
         self.synthetic_data_cache = os.path.join(
             cache_dir, f"{self.dataset_name}_{self._hash_id}_{self.synthetic_mode}_synthetic.json"
         )
@@ -306,20 +306,20 @@ class SAGEEngine:
             cache_dir, f"{self.dataset_name}_{self._hash_id}_{self.synthetic_mode}_index"
         )
         
-        # 原始数据
+        # Original data
         self._original_docs: List[Document] = []
         self._synthetic_docs: List[Document] = []
         self._vector_store: Optional[Chroma] = None
         
-        # 状态
+        # State
         self._is_preprocessed = False
         self._is_index_built = False
     
     def set_synthetic_mode(self, mode: str = "sync"):
         """
-        设置合成模式并更新缓存路径
+        Set synthetic mode and update cache paths
         
-        确保sync和agent2模式使用独立的缓存文件
+        Ensure sync and agent2 modes use independent cache files
         """
         if mode not in ["sync", "agent2"]:
             print(f"[SAGE] Warning: Unknown synthetic_mode '{mode}', using 'sync'")
@@ -328,7 +328,7 @@ class SAGEEngine:
         if self.synthetic_mode != mode:
             print(f"[SAGE] Switching synthetic_mode from '{self.synthetic_mode}' to '{mode}'")
             self.synthetic_mode = mode
-            # 更新缓存路径
+            # Update cache paths
             self.synthetic_data_cache = os.path.join(
                 self.cache_dir, f"{self.dataset_name}_{self._hash_id}_{mode}_synthetic.json"
             )
@@ -338,13 +338,13 @@ class SAGEEngine:
             self.index_dir = os.path.join(
                 self.cache_dir, f"{self.dataset_name}_{self._hash_id}_{mode}_index"
             )
-            # 重置状态，强制重新加载/生成
+            # Reset state, force reload/regenerate
             self._is_preprocessed = False
             self._is_index_built = False
             self._vector_store = None
     
     def get_document_count(self) -> int:
-        """获取合成数据文档数量"""
+        """Get synthetic data document count"""
         if self._vector_store:
             try:
                 return self._vector_store._collection.count()
@@ -353,22 +353,22 @@ class SAGEEngine:
         return len(self._synthetic_docs) if self._synthetic_docs else 0
     
     def _ensure_cache_dir(self):
-        """确保缓存目录存在"""
+        """Ensure cache directory exists"""
         os.makedirs(self.cache_dir, exist_ok=True)
     
     def _detect_dataset_type(self) -> str:
-        """自动检测数据集类型"""
+        """Auto-detect dataset type"""
         path_lower = self.original_data_path.lower()
         
         for dtype, keywords in self.DATASET_TYPE_KEYWORDS.items():
             if any(kw in path_lower for kw in keywords):
                 return dtype
         
-        # 默认返回chat类型 (与SAGE原实现一致)
+        # Default to chat type (aligned with SAGE original implementation)
         return "chat"
     
     def _compute_data_hash(self) -> str:
-        """计算数据集哈希用于缓存标识"""
+        """Compute dataset hash for cache identification"""
         if not os.path.exists(self.original_data_path):
             return "unknown"
         
@@ -377,11 +377,11 @@ class SAGEEngine:
         return file_hash
     
     def _load_original_docs(self) -> List[Document]:
-        """加载原始数据集"""
+        """Load original dataset"""
         if self._original_docs:
             return self._original_docs
         
-        # 使用现有的data_loader
+        # Use existing data_loader
         from src.data_loader import DatasetLoader
         loader = DatasetLoader()
         self._original_docs = loader.load_dataset(self.original_data_path)
@@ -390,7 +390,7 @@ class SAGEEngine:
         return self._original_docs
     
     # =========================================================================
-    # Stage 1: 属性提取与合成数据生成
+    # Stage 1: Attribute Extraction and Synthetic Data Generation
     # =========================================================================
     
     def get_synthetic_context(
@@ -400,19 +400,19 @@ class SAGEEngine:
         use_cache: bool = True
     ) -> Tuple[List[str], List[str]]:
         """
-        生成合成上下文 (Stage 1)
+        Generate synthetic context (Stage 1)
         
-        对每个原始上下文:
-        1. 属性提取
-        2. 合成数据生成
+        For each original context:
+        1. Attribute extraction
+        2. Synthetic data generation
         
         Args:
-            ori_contexts: 原始上下文列表 [[ctx1, ctx2, ...], [ctx1, ctx2, ...], ...]
-            dataset_type: 数据集类型 (默认自动检测)
-            use_cache: 是否使用缓存
+            ori_contexts: Original context list [[ctx1, ctx2, ...], [ctx1, ctx2, ...], ...]
+            dataset_type: Dataset type (auto-detect by default)
+            use_cache: Whether to use cache
             
         Returns:
-            (属性列表, 合成上下文列表)
+            (attribute list, synthetic context list)
         """
         dtype = dataset_type or self.dataset_type
         
@@ -424,14 +424,14 @@ class SAGEEngine:
             synthetic_con = []
             
             for ori_con in ori_context:
-                # Step 1: 属性提取
+                # Step 1: Attribute extraction
                 attributes_prompt = get_attributes_prompt(ori_con, dtype)
                 attributes_context = self.attr_client.generate(
                     attributes_prompt,
                     system_content="You are a helpful assistant."
                 )
                 
-                # Step 2: 合成数据生成
+                # Step 2: Synthetic data generation
                 synthetic_prompt = get_synthetic_prompt(attributes_context, dtype)
                 synthetic_context = self.synth_client.generate(
                     synthetic_prompt,
@@ -448,18 +448,18 @@ class SAGEEngine:
     
     def get_single_synthetic(self, original_text: str, dataset_type: str = None) -> str:
         """
-        为单个文本生成合成数据 (用于按需生成)
+        Generate synthetic data for single text (for on-demand generation)
         
         Args:
-            original_text: 原始文本
-            dataset_type: 数据集类型
+            original_text: Original text
+            dataset_type: Dataset type
             
         Returns:
-            合成后的文本
+            Synthetic text
         """
         dtype = dataset_type or self.dataset_type
         
-        # Step 1: 属性提取
+        # Step 1: Attribute extraction
         attributes_prompt = get_attributes_prompt(original_text, dtype)
         attributes_context = self.attr_client.generate(
             attributes_prompt,
@@ -470,7 +470,7 @@ class SAGEEngine:
             print("[SAGE] Warning: Attribute extraction returned empty")
             return original_text
         
-        # Step 2: 合成数据生成
+        # Step 2: Synthetic data generation
         synthetic_prompt = get_synthetic_prompt(attributes_context, dtype)
         synthetic_context = self.synth_client.generate(
             synthetic_prompt,
@@ -480,13 +480,13 @@ class SAGEEngine:
         return synthetic_context if synthetic_context else original_text
     
     # =========================================================================
-    # Stage 2: Agent迭代精炼 (可选)
+    # Stage 2: Agent Iterative Refinement (Optional)
     # =========================================================================
     
     def agent_refinement(self, original_text: str, synthetic_text: str) -> str:
         """
-        Agent迭代精炼 (Stage 2)
-        根据评估结果决定是否需要隐私增强
+        Agent iterative refinement (Stage 2)
+        Decide whether privacy enhancement is needed based on evaluation results
         """
         evaluator_prompt = f"""You are a privacy evaluation agent. Analyze the synthetic data and original data:
 
@@ -513,7 +513,7 @@ If there are privacy concerns, respond with:
         if "[SAFE]" in evaluation.upper():
             return synthetic_text
         else:
-            # 不安全，添加隐私噪声
+            # Unsafe, add privacy noise
             noise_prompt = f"""Rewrite the following text to remove any potential privacy risks while preserving utility.
 Remove or generalize: names, specific dates, locations, contact info, health/financial details.
 Keep the general knowledge and structure.
@@ -527,7 +527,7 @@ Rewritten (privacy-preserving version):
             return result if result else synthetic_text
     
     # =========================================================================
-    # 数据预处理与索引构建
+    # Data Preprocessing and Index Building
     # =========================================================================
     
     def preprocess_and_build_index(
@@ -536,20 +536,20 @@ Rewritten (privacy-preserving version):
         batch_size: int = 100
     ) -> bool:
         """
-        预处理数据集并构建合成数据索引
+        Preprocess dataset and build synthetic data index
         
         Args:
-            rebuild: 是否强制重建 (忽略缓存)
-            batch_size: 批处理大小
+            rebuild: Whether to force rebuild (ignore cache)
+            batch_size: Batch processing size
             
         Returns:
-            是否成功
+            Whether successful
         """
         if self._is_preprocessed and self._is_index_built and not rebuild:
             print(f"[SAGE] Already preprocessed, skipping (use rebuild=True to force)")
             return True
         
-        # Step 1: 加载原始数据
+        # Step 1: Load original data
         print("[SAGE] Step 0: Loading original dataset...")
         original_docs = self._load_original_docs()
         
@@ -557,49 +557,49 @@ Rewritten (privacy-preserving version):
             print("[SAGE] Error: No documents loaded")
             return False
         
-        # Step 2: 检查缓存
+        # Step 2: Check cache
         if not rebuild and os.path.exists(self.synthetic_data_cache):
             print(f"[SAGE] Loading synthetic data from cache: {self.synthetic_data_cache}")
             with open(self.synthetic_data_cache, 'r', encoding='utf-8') as f:
                 synthetic_data = json.load(f)
             
-            # 转换为Document
+            # Convert to Document
             self._synthetic_docs = []
             for i, item in enumerate(synthetic_data):
                 if not item.get("content"):
                     continue
-                chunk_id = f"synth_{i:04d}"  # 与原始数据格式保持一致
+                chunk_id = f"synth_{i:04d}"  # Keep consistent with original data format
                 doc = Document(
                     page_content=item["content"],
                     metadata={
                         "id": chunk_id,
                         "source": f"synthetic_{i}",
-                        "original_content": item.get("original", ""),  # 保存原始内容用于追踪
+                        "original_content": item.get("original", ""),  # Save original content for tracking
                         "is_synthetic": True
                     }
                 )
                 self._synthetic_docs.append(doc)
         else:
-            # Step 3: 生成合成数据 (Stage 1) - 并行处理
+            # Step 3: Generate synthetic data (Stage 1) - parallel processing
             print("[SAGE] Stage 1: Generating synthetic data (parallel processing)...")
             
-            # 判断总文档数量
+            # Determine total document count
             total_docs = len(original_docs)
             print(f"[SAGE] Total documents to process: {total_docs}")
             
-            # 并行处理配置
-            max_workers = min(8, os.cpu_count() or 4)  # 根据CPU核心数设置并行度
+            # Parallel processing configuration
+            max_workers = min(8, os.cpu_count() or 4)  # Set parallelism based on CPU cores
             print(f"[SAGE] Using {max_workers} parallel workers")
             
-            all_synthetic = [None] * total_docs  # 预分配列表保持顺序
+            all_synthetic = [None] * total_docs  # Pre-allocate list to maintain order
             
-            # 单个文档处理函数 (用于并行执行)
+            # Single document processing function (for parallel execution)
             def process_single_doc(args):
                 idx, text = args
                 try:
                     synthetic_text = self.get_single_synthetic(text)
 
-                    # 如果是 agent2 模式，执行 Stage 2
+                    # If agent2 mode, execute Stage 2
                     if self.synthetic_mode == "agent2":
                         synthetic_text = self.agent_refinement(text, synthetic_text)
 
@@ -611,35 +611,35 @@ Rewritten (privacy-preserving version):
                 except Exception as e:
                     print(f"[SAGE] Error processing doc {idx}: {e}")
                     return idx, {
-                        "content": text,  # 回退到原始文本
+                        "content": text,  # Fallback to original text
                         "original": text,
                         "metadata": {"source": "fallback", "idx": idx}
                     }
             
-            # 准备任务列表
+            # Prepare task list
             tasks = [(i, doc.page_content) for i, doc in enumerate(original_docs)]
             
-            # 使用ThreadPoolExecutor并行处理
+            # Use ThreadPoolExecutor for parallel processing
             with ThreadPoolExecutor(max_workers=max_workers) as executor:
-                # 使用imap保持顺序，每处理完一个就更新进度条
+                # Use imap to maintain order, update progress bar after each is processed
                 results = list(tqdm(
                     executor.map(process_single_doc, tasks),
                     total=total_docs,
                     desc="[SAGE] Generating synthetic data",
                     unit="doc",
-                    ncols=80  # 限制进度条宽度
+                    ncols=80  # Limit progress bar width
                 ))
             
-            # 收集结果 (保持顺序)
+            # Collect results (maintain order)
             for idx, result in results:
                 all_synthetic[idx] = result
             
-            # 保存缓存
+            # Save cache
             print(f"[SAGE] Saving synthetic data cache to: {self.synthetic_data_cache}")
             with open(self.synthetic_data_cache, 'w', encoding='utf-8') as f:
                 json.dump(all_synthetic, f, ensure_ascii=False, indent=2)
             
-            # 转换为Document (与原始数据格式保持一致)
+            # Convert to Document (keep consistent with original data format)
             self._synthetic_docs = []
             for i, item in enumerate(all_synthetic):
                 if not item.get("content"):
@@ -662,7 +662,7 @@ Rewritten (privacy-preserving version):
         
         print(f"[SAGE] Generated {len(self._synthetic_docs)} synthetic documents")
         
-        # Step 4: 构建向量索引
+        # Step 4: Build vector index
         print("[SAGE] Building vector index...")
         self._build_synthetic_index()
         
@@ -671,7 +671,7 @@ Rewritten (privacy-preserving version):
         return True
     
     def _build_synthetic_index(self):
-        """构建合成数据的向量索引"""
+        """Build vector index for synthetic data"""
         if self._is_index_built:
             return
         
@@ -679,7 +679,7 @@ Rewritten (privacy-preserving version):
             print("[SAGE] Warning: No synthetic docs to index")
             return
         
-        # 如果索引已存在则加载
+        # If index already exists, load it
         if os.path.exists(os.path.join(self.index_dir, "chroma.sqlite3")):
             print(f"[SAGE] Loading existing index from: {self.index_dir}")
             self._vector_store = Chroma(
@@ -699,24 +699,24 @@ Rewritten (privacy-preserving version):
         print(f"[SAGE] Index built with {count} documents")
     
     # =========================================================================
-    # 检索接口 (供RAG使用)
+    # Retrieval Interface (for RAG use)
     # =========================================================================
     
     def search(self, query: str, top_k: int = 4, top_p: int = None) -> List[Document]:
         """
-        在合成数据中进行检索
+        Retrieve from synthetic data
         
-        对齐 BaseEngine.search 接口
+        Aligned with BaseEngine.search interface
         
         Args:
-            query: 查询文本
-            top_k: 返回的文档数量
-            top_p: 候选文档数量 (可选, 与top_k相同则不重排)
+            query: Query text
+            top_k: Number of documents to return
+            top_p: Candidate document count (optional, same as top_k means no rerank)
             
         Returns:
-            检索到的文档列表
+            List of retrieved documents
         """
-        # 确保索引已构建
+        # Ensure index is built
         if not self._is_index_built:
             print("[SAGE] Index not built, triggering lazy preprocessing...")
             self.preprocess_and_build_index()
@@ -724,18 +724,18 @@ Rewritten (privacy-preserving version):
         if not self._vector_store:
             raise ValueError("[SAGE] Vector store not initialized")
         
-        # 执行检索
+        # Execute retrieval
         candidates = self._vector_store.similarity_search(query, k=top_k)
         return candidates
     
     def get_index_info(self) -> Dict[str, Any]:
-        """获取索引信息"""
+        """Get index information"""
         info = {
             "dataset_type": self.dataset_type,
             "original_path": self.original_data_path,
             "original_count": len(self._original_docs),
             "synthetic_count": len(self._synthetic_docs),
-            "index_built": self._is_index_built,
+            "is_index_built": self._is_index_built,
             "index_dir": self.index_dir,
             "cache_dir": self.cache_dir,
         }
@@ -749,7 +749,7 @@ Rewritten (privacy-preserving version):
         return info
     
     def get_dp_stats(self) -> Dict[str, Any]:
-        """获取SAGE统计信息 (兼容DP_RAG接口)"""
+        """Get SAGE statistics (compatible with DP_RAG interface)"""
         return {
             "synthetic_mode": "stage1",
             "attr_llm_errors": self.attr_client.error_count,
@@ -760,7 +760,7 @@ Rewritten (privacy-preserving version):
         }
     
     def reset(self):
-        """重置SAGE引擎状态"""
+        """Reset SAGE engine state"""
         self._original_docs = []
         self._synthetic_docs = []
         self._vector_store = None
@@ -771,7 +771,7 @@ Rewritten (privacy-preserving version):
 
 
 # =============================================================================
-# 便捷函数
+# Convenience Functions
 # =============================================================================
 
 def build_sage_index(
@@ -782,17 +782,17 @@ def build_sage_index(
     rebuild: bool = False
 ) -> SAGEEngine:
     """
-    快速构建SAGE索引的便捷函数
+    Convenience function for quickly building SAGE index
     
     Args:
-        data_path: 数据集路径
-        llm: LLM实例
-        embedding: Embedding实例
-        cache_dir: 缓存目录
-        rebuild: 是否强制重建
+        data_path: Dataset path
+        llm: LLM instance
+        embedding: Embedding instance
+        cache_dir: Cache directory
+        rebuild: Whether to force rebuild
         
     Returns:
-        配置好的SAGEEngine实例
+        Configured SAGEEngine instance
     """
     sage = SAGEEngine(
         llm=llm,
@@ -807,6 +807,6 @@ def build_sage_index(
 
 
 if __name__ == "__main__":
-    # 测试代码
+    # Test code
     print("[SAGE] Module loaded successfully")
     print("[SAGE] Usage: from rag.sage_engine import SAGEEngine")

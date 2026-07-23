@@ -1,7 +1,7 @@
 # rag/dp_mechanisms.py
 """
-差分隐私机制封装
-从 DPRAG 项目移植的核心 DP 机制
+Differential Privacy Mechanism Wrapper
+Core DP mechanisms ported from DPRAG project
 """
 
 import numpy as np
@@ -11,31 +11,31 @@ from typing import List, Optional, Tuple, Dict, Any
 
 
 class NotFoundLDTop1(Exception):
-    """LDGumbelMechanism 未能找到有效 top-1 时抛出"""
+    """Raised when LDGumbelMechanism fails to find valid top-1"""
     pass
 
 
 class DPExpenseOverflow(Exception):
-    """DP 隐私预算超支时抛出"""
+    """Raised when DP privacy budget is exceeded"""
     pass
 
 
 class LDGumbelMechanism:
     """
-    Limit Domain Gumbel 机制
+    Limit Domain Gumbel Mechanism
     
     Paper: Durfee, D., & Rogers, R. M. (2019). Practical differentially private 
     top-k selection with pay-what-you-get composition. NeurIPS.
     
-    这是一个用于 token 级别差分隐私投票的核心机制。
-    在 majority vote 中通过添加 Gumbel 噪声来实现隐私保护。
+    This is a core mechanism for token-level Differential Privacy voting.
+    Achieves privacy protection by adding Gumbel noise in majority vote.
     
-    参数:
-        eps: 隐私预算 epsilon
-        delta: 隐私失败概率 delta
-        target_eps: 总 epsilon 预算上限
-        target_delta: 总 delta 预算上限
-        k_bar: DP 候选集大小
+    Parameters:
+        eps: Privacy budget epsilon
+        delta: Privacy failure probability delta
+        target_eps: Total epsilon budget upper bound
+        target_delta: Total delta budget upper bound
+        k_bar: DP candidate set size
     """
     
     def __init__(
@@ -57,23 +57,23 @@ class LDGumbelMechanism:
         self.delta1 = delta if delta1 is None else delta1
         self.subsampling_rate = subsampling_rate
         
-        self.total_k = 0  # 成功选择的 token 数
-        self.total_queries = 0  # 总查询数
+        self.total_k = 0  # Number of successfully selected tokens
+        self.total_queries = 0  # Total query count
         
         self.fail_mode = fail_mode  # 'ld_pate', 'rand', 'stop', 'raise'
     
     def get_top1(self, cnts: torch.Tensor, dim: int, k_bar: Optional[int] = None, sens: float = 2.0) -> int:
         """
-        输入 histogram (cnts)，输出 top-1 索引
+        Input histogram (cnts), output top-1 index
         
-        参数:
-            cnts: token 投票计数 tensor
-            dim: 词表大小
-            k_bar: DP 候选集大小 (默认使用 self.k_bar)
-            sens: L0 敏感度 (默认 2.0)
+        Parameters:
+            cnts: Token vote count tensor
+            dim: Vocabulary size
+            k_bar: DP candidate set size (default uses self.k_bar)
+            sens: L0 sensitivity (default 2.0)
             
-        返回:
-            选中的 token ID
+        Returns:
+            Selected token ID
         """
         self.total_queries += 1
         if k_bar is None:
@@ -88,7 +88,7 @@ class LDGumbelMechanism:
         output_rand_if_fail = False
         
         if k_bar < dim:
-            # 计算阈值
+            # Calculate threshold
             if k_bar + 1 > real_len_cnts:
                 h_perp = 0
             else:
@@ -105,25 +105,25 @@ class LDGumbelMechanism:
                     output_rand_if_fail = True
                 k_bar = real_len_cnts
         else:
-            # k_bar == dim, 退化为 PATE
+            # k_bar == dim, degenerate to PATE
             if k_bar > real_len_cnts:
                 v_perp = torch.max(gumbel.sample((k_bar - real_len_cnts,))).item()
                 k_bar = real_len_cnts
                 output_rand_if_fail = True
             else:
-                v_perp = -np.inf  # 永不失败
+                v_perp = -np.inf  # Never fail
         
-        # 添加 Gumbel 噪声并选择
+        # Add Gumbel noise and select
         v_cnts = sorted_cnts[:k_bar] + gumbel.sample((k_bar,)).to(sorted_cnts.device)
         v_max_idx = torch.argmax(v_cnts)
         
         if v_cnts[v_max_idx] >= v_perp:
-            # 成功
+            # Success
             self.total_k += 1
             self.check_dp_budget()
             return sorted_idxs[v_max_idx].item()
         else:
-            # 失败
+            # Failure
             if output_rand_if_fail:
                 self.total_k += 1
                 rand_idx = torch.randint(real_len_cnts, dim, (1,))[0].item()
@@ -135,19 +135,19 @@ class LDGumbelMechanism:
     
     def get_dp_expense(self, total_queries: Optional[int] = None) -> Tuple[float, float]:
         """
-        获取当前累积的 DP 隐私支出
+        Get current accumulated DP privacy expense
         
-        返回:
-            (eps, delta) 元组
+        Returns:
+            (eps, delta) tuple
         """
         if total_queries is None:
             total_queries = self.total_queries
         
-        # 使用简单的 compose 计算
+        # Use simple composition calculation
         k = self.total_k
         l = total_queries
         
-        # 三种 bounds 取最小
+        # Take minimum of three bounds
         eps_ = [None] * 3
         eps_[0] = k * self.eps
         eps_[1] = k * self.eps * (np.exp(self.eps) - 1) / (np.exp(self.eps) + 1) + self.eps * np.sqrt(
@@ -161,14 +161,14 @@ class LDGumbelMechanism:
     
     def check_dp_budget(self, raise_error: bool = True, verbose: bool = False) -> bool:
         """
-        检查隐私预算是否超支
+        Check if privacy budget is exceeded
         
-        参数:
-            raise_error: 超支时是否抛出异常
-            verbose: 是否打印详细信息
+        Parameters:
+            raise_error: Whether to raise exception when exceeded
+            verbose: Whether to print detailed information
             
-        返回:
-            是否仍在预算内
+        Returns:
+            Whether still within budget
         """
         if self.target_eps is not None:
             eps, delta = self.get_dp_expense()
@@ -189,39 +189,39 @@ def majority_vote(
     k_bar: Optional[int] = None
 ) -> Tuple[int, Dict[int, int]]:
     """
-    使用 DP 机制进行多数投票
+    Majority voting using DP mechanism
     
-    参数:
-        tokens: voter 生成的 token IDs，形状为 (n_voters,)
-        dim: 词表大小
-        dp_engine: DP 引擎，如果为 None 则使用普通多数投票
-        k_bar: DP 候选集大小
+    Parameters:
+        tokens: Token IDs generated by voters, shape (n_voters,)
+        dim: Vocabulary size
+        dp_engine: DP engine, if None then use regular majority vote
+        k_bar: DP candidate set size
         
-    返回:
-        (选中的 token ID, token -> 票数 映射)
+    Returns:
+        (Selected token ID, token -> vote count mapping)
     """
-    # 统计每个 token 的票数
+    # Count votes for each token
     uni_tokens, cnts = tokens.unique(return_counts=True)
     token_votes = {token.item(): vote.item() for token, vote in zip(uni_tokens, cnts)}
     
     if dp_engine is None:
-        # 普通多数投票
+        # Regular majority vote
         max_cnt = torch.max(cnts)
         max_idxs = torch.where(cnts == max_cnt)[0]
         if len(max_idxs) == 1:
             return uni_tokens[max_idxs[0]].item(), token_votes
         else:
-            # 平票时随机选择
+            # Random selection on tie
             idx = max_idxs[torch.randint(len(max_idxs), (1,))[0]]
             return uni_tokens[idx].item(), token_votes
     else:
-        # DP 投票
-        # dp_engine 返回的是“候选序号”，需要映射回真实 token id
+        # DP voting
+        # dp_engine returns "candidate index", need to map back to real token id
         priv_idx = dp_engine.get_top1(cnts, dim, k_bar=k_bar)
         if priv_idx < len(uni_tokens):
             return uni_tokens[priv_idx].item(), token_votes
         else:
-            # 需要从不在候选集中的 token 随机选择
+            # Need to randomly select from tokens not in candidate set
             priv_idx = priv_idx - len(uni_tokens)
             x = torch.ones((dim,), device=tokens.device)
             x[uni_tokens] = 0.
@@ -237,40 +237,40 @@ def ensemble_generate(
     fail_mode: str = 'stop'
 ) -> Tuple[List[int], int]:
     """
-    DP Ensemble 生成
+    DP Ensemble Generation
     
-    使用多个 voter 独立生成，然后通过 DP 投票选择每个 token。
+    Use multiple voters to independently generate, then select each token via DP vote.
     
-    参数:
-        llm: LLM 实例，需要有 generate_and_tokenize 方法
-        prompt_list: 提示词列表，每个 voter 一个
-        max_new_tokens: 最大生成的 token 数
-        dp_engine: DP 引擎，如果为 None 则使用普通投票
-        fail_mode: 失败处理模式 'ld_pate', 'rand', 'stop', 'raise'
+    Parameters:
+        llm: LLM instance, needs generate_and_tokenize method
+        prompt_list: List of prompts, one per voter
+        max_new_tokens: Maximum tokens to generate
+        dp_engine: DP engine, if None then use regular voting
+        fail_mode: Failure handling mode 'ld_pate', 'rand', 'stop', 'raise'
         
-    返回:
-        (生成的 token IDs 列表, exit_status: 0=成功, 1=失败)
+    Returns:
+        (Generated token IDs list, exit_status: 0=success, 1=failure)
     """
     generated_tokens = []
     exit_status = 0
     
     for _ in range(max_new_tokens):
-        # 获取所有 voter 的 next token
+        # Get next token from all voters
         next_tokens = llm.generate_tokens(prompt_list, temperature=0, max_tokens=1)
         next_tokens = torch.tensor(next_tokens)
         
-        # 确定 token 维度 (词表大小)
-        # 如果 llm 提供接口获取，否则使用常见的 32000
+        # Determine token dimension (vocabulary size)
+        # If llm provides interface, use it; otherwise use common 32000
         try:
             token_dim = llm.get_vocab_size()
         except:
-            token_dim = 32000  # 默认值
+            token_dim = 32000  # Default value
         
         if dp_engine is None:
-            # 普通投票
+            # Regular voting
             next_token = majority_vote(next_tokens, token_dim)[0]
         else:
-            # DP 投票
+            # DP voting
             try:
                 next_token, _ = majority_vote(
                     next_tokens, 
@@ -292,10 +292,10 @@ def ensemble_generate(
         
         generated_tokens.append(next_token)
         
-        # 更新所有 prompt
+        # Update all prompts
         prompt_list = [p + [next_token] for p in prompt_list]
         
-        # 检查 EOS
+        # Check EOS
         try:
             eos_id = llm.get_eos_token_id()
             if next_token == eos_id:

@@ -7,31 +7,31 @@ from langchain_text_splitters import RecursiveCharacterTextSplitter
 
 class DatasetLoader:
     """
-    针对特定数据集实例的加载器。
-    用于隐私研究中的特定切片策略。
+    Dataset-specific loader instance.
+    Used for specific slicing strategies in privacy research.
     """
     
     def load_dataset(self, file_path: str) -> List[Document]:
         """
-        根据文件名模式自动选择加载策略
+        Automatically select loading strategy based on filename pattern
         """
         if not os.path.exists(file_path):
             raise FileNotFoundError(f"Dataset not found: {file_path}")
 
         filename = os.path.basename(file_path)
 
-        # 策略 1: HP1_5ch (哈利波特) - 动态计算 chunk_size 以获得约 100 个切片
+        # Strategy 1: HP1_5ch (Harry Potter) - dynamically compute chunk_size to get approximately 100 slices
         if "HP1_5ch" in filename:
             return self._load_hp1_dynamic(file_path)
         
-        # 策略 2: HealthCareMagic (医患问答) 或 问答对格式的 JSON 列表处理
+        # Strategy 2: HealthCareMagic (Medical QA) or QA pair format JSON list processing
         elif "HealthCareMagic" in filename or "QA" in filename or "PokemonInfo" in filename:
             return self._load_qa_json(file_path)
 
         elif "trec" in filename or "sci" in filename or "nfc" in filename:
             return self._load_qa_json(file_path)
         
-        # 策略 3: 默认处理 (简单的文本加载)
+        # Strategy 3: Default processing (simple text loading)
         elif file_path.endswith(".txt"):
             return self._load_generic_txt(file_path)
         
@@ -40,18 +40,18 @@ class DatasetLoader:
 
     def _load_hp1_dynamic(self, file_path: str) -> List[Document]:
         """
-        针对 HP1_5ch 的特殊策略：
-        读取全文 -> 计算 chunk_size -> 分割为约 100 个 chunks
+        Special strategy for HP1_5ch:
+        Read full text -> compute chunk_size -> split into approximately 100 chunks
         """
         print(f"[DataLoader] Applying 'txt Strategy' for {file_path}")
         
         with open(file_path, 'r', encoding='utf-8') as f:
             text_content = f.read()
 
-        # 计算目标 chunk_size
+        # Calculate target chunk_size
         target_chunks = 100
         text_length = len(text_content)
-        # 避免除以零或过小的 chunk
+        # Avoid division by zero or too small chunk
         if text_length < target_chunks:
             chunk_size = text_length
         else:
@@ -66,13 +66,13 @@ class DatasetLoader:
             chunk_overlap=chunk_overlap
         )
 
-        # 原始文档对象
+        # Raw document object
         raw_doc = Document(page_content=text_content, metadata={"source": file_path})
         
-        # 执行切分
+        # Execute splitting
         chunks = splitter.split_documents([raw_doc])
         
-        # 格式化输出 (添加ID，简化Metadata)
+        # Format output (add ID, simplify metadata)
         processed_chunks = []
         for i, chunk in enumerate(chunks):
             chunk_id = f"{i:04d}"
@@ -91,8 +91,8 @@ class DatasetLoader:
 
     def _load_qa_json(self, file_path: str) -> List[Document]:
         """
-        针对 HealthCareMagic 的特殊策略：
-        JSON List -> 每个 Item 作为一个 Chunk (Q + A)
+        Special strategy for HealthCareMagic:
+        JSON List -> each Item as a Chunk (Q + A)
         """
         print(f"[DataLoader] Applying 'json QA Strategy' for {file_path}")
         
@@ -101,12 +101,12 @@ class DatasetLoader:
             
         chunks = []
         for i, item in enumerate(data):
-            # 兼容不同的 JSON 键名，根据实际情况调整
-            # 假设结构是 input/output 或者 instruction/output
+            # Compatible with different JSON key names, adjust based on actual situation
+            # Assume structure is input/output or instruction/output
             question = item.get('input') or item.get('instruction') or item.get('question') or ""
             answer = item.get('output') or item.get('response') or item.get('answer') or ""
             
-            # 构建文本内容
+            # Build text content
             qa_text = f"Q: {question}\nA: {answer}"
             
             chunk_id = f"{i:04d}"
@@ -123,11 +123,11 @@ class DatasetLoader:
         return chunks
 
     def _load_generic_txt(self, file_path: str) -> List[Document]:
-        """默认的 TXT 加载策略"""
+        """Default TXT loading strategy"""
         print(f"[DataLoader] Applying 'Generic TXT Strategy' for {file_path}")
         with open(file_path, 'r', encoding='utf-8') as f:
             text = f.read()
         
-        # 默认使用固定大小切分
+        # Default to fixed-size splitting
         splitter = RecursiveCharacterTextSplitter(chunk_size=500, chunk_overlap=50)
         return splitter.create_documents([text], metadatas=[{"source": os.path.basename(file_path)}])

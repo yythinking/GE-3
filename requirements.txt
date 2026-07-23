@@ -1,0 +1,28 @@
+# GE³ - RAG Knowledge Extraction Attack & Defense Framework
+# Minimal dependency list (Python 3.11+)
+
+# LLM Orchestration
+langchain>=0.3.0
+langchain-core>=0.3.0
+langchain-chroma>=0.2.0
+langchain-huggingface>=0.1.0
+langchain-openai>=0.2.0
+langchain-ollama>=0.2.0
+langchain-text-splitters>=0.3.0
+langgraph>=0.2.0
+
+# Embedding & Reranking
+sentence-transformers>=3.0.0
+
+# Deep Learning
+torch>=2.0.0
+
+# Numeric & Text Processing
+numpy>=1.24.0
+rouge>=1.0.1
+tiktoken>=0.7.0
+
+# Visualization & Utilities
+matplotlib>=3.7.0
+tqdm>=4.65.0
+python-dotenv>=1.0.0

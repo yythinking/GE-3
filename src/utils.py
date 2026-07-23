@@ -5,10 +5,10 @@ import matplotlib.pyplot as plt
 from typing import List, Dict
 from rouge import Rouge 
 
-# === 基础计算工具 ===
+# === Basic Calculation Tools ===
 
 def calculate_cosine_similarity(vec1, vec2):
-    """计算余弦相似度"""
+    """Calculate cosine similarity"""
     vec1 = np.array(vec1).flatten()
     vec2 = np.array(vec2).flatten()
     norm1 = np.linalg.norm(vec1)
@@ -18,7 +18,7 @@ def calculate_cosine_similarity(vec1, vec2):
     return float(np.dot(vec1, vec2) / (norm1 * norm2))
 
 def calculate_rouge_l_f1(prediction: str, reference: str) -> float:
-    """计算 Rouge-L F1 分数"""
+    """Calculate Rouge-L F1 score"""
     if not prediction or not reference:
         return 0.0
     try:
@@ -28,30 +28,30 @@ def calculate_rouge_l_f1(prediction: str, reference: str) -> float:
     except Exception:
         return 0.0
 
-# === 绘图工具 (从 Pipeline 移入并优化) ===
+# === Plotting Tools ===
 
 def generate_analysis_plots(history_metrics: List[dict], output_dir: str):
     """
-    绘制详细分析图表
-    优化：包含 SS 的每个坐标点（散点图）以及趋势线
+    Generate detailed analysis plots
+    Optimization: includes each coordinate point of SS (scatter plot) and trend lines
     """
     if not history_metrics: return
     
-    # 提取数据
+    # Extract data
     turns = [m['turn'] for m in history_metrics]
     sc = [m['sc'] for m in history_metrics]
     asr = [m['asr'] for m in history_metrics]
     
-    # 语义相似度 (SS) - 回答 vs 问题
+    # Semantic Similarity (SS) - answer vs question
     avg_ss = [m['avg_ss'] for m in history_metrics]
-    raw_ss_points = [m.get('current_ss', 0) for m in history_metrics] # 获取单点数据
+    raw_ss_points = [m.get('current_ss', 0) for m in history_metrics] # Get single point data
     
-    # 上下文相关度 (CRR) - 回答 vs 上下文
+    # Context Relevance Ratio (CRR) - answer vs context
     avg_crr = [m['avg_crr'] for m in history_metrics]
     
     pool_size = [m['pool_size'] for m in history_metrics]
     
-    # 设置风格
+    # Set style
     plt.style.use('seaborn-v0_8-whitegrid')
     
     # 1. Attack Efficiency: SC & ASR
@@ -69,10 +69,10 @@ def generate_analysis_plots(history_metrics: List[dict], output_dir: str):
     # 2. Quality Metrics: SS (Detailed) & CRR
     plt.figure(figsize=(12, 6))
     
-    # 绘制 SS 的所有散点 (半透明)
+    # Plot all scatter points of SS (semi-transparent)
     plt.scatter(turns, raw_ss_points, color='purple', alpha=0.15, s=15, label='SS (Raw Points)')
     
-    # 绘制 SS 和 CRR 的移动平均/趋势线
+    # Plot moving average/trend lines of SS and CRR
     plt.plot(turns, avg_ss, label='Avg SS', color='purple', linewidth=2)
     plt.plot(turns, avg_crr, label='Avg CRR', color='orange', linestyle='-.', linewidth=2)
     

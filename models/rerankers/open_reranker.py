@@ -7,11 +7,11 @@ from ..interfaces.rerank_interface import BaseReranker
 class OpenReranker(BaseReranker):
     def __init__(self, model_name: str, api_key: str, base_url: str = "https://uni-api.cstcloud.cn/v1/rerank"):
         """
-        初始化云端重排序模型封装
+        Initialize cloud rerank model wrapper
         
-        :param model_name: 模型名称，如 'bge-reranker-v2-m3'
-        :param api_key: 平台的 API Key
-        :param base_url: Rerank 接口完整地址
+        :param model_name: Model name, e.g., 'bge-reranker-v2-m3'
+        :param api_key: Platform API Key
+        :param base_url: Full Rerank API endpoint address
         """
         self.model_name = model_name
         self.api_key = api_key
@@ -19,12 +19,12 @@ class OpenReranker(BaseReranker):
 
     def rerank(self, query: str, documents: List[Document], top_k: int = 3) -> List[Document]:
         """
-        调用云端 API 对文档进行重排序
+        Call cloud API to rerank documents
         """
         if not documents:
             return []
 
-        # 1. 准备请求数据：提取 Document 中的文本内容
+        # 1. Prepare request data: extract text content from Documents
         texts = [doc.page_content for doc in documents]
         
         headers = {
@@ -40,13 +40,13 @@ class OpenReranker(BaseReranker):
         }
 
         try:
-            # 2. 发起 API 调用
+            # 2. Make API call
             response = requests.post(self.base_url, json=payload, headers=headers)
             response.raise_for_status()
             data = response.json()
             
-            # 3. 解析结果并重组 Document 对象
-            # 假设返回格式为 {"results": [{"index": 0, "relevance_score": 0.9}, ...]}
+            # 3. Parse results and reconstruct Document objects
+            # Assume return format: {"results": [{"index": 0, "relevance_score": 0.9}, ...]}
             results = data.get("results", [])
             
             reranked_docs = []
@@ -54,7 +54,7 @@ class OpenReranker(BaseReranker):
                 original_idx = item["index"]
                 score = item["relevance_score"]
                 
-                # 获取原文档对象并注入相关性分数
+                # Get original document object and inject relevance score
                 doc = documents[original_idx]
                 doc.metadata["relevance_score"] = score
                 reranked_docs.append(doc)
@@ -66,7 +66,7 @@ class OpenReranker(BaseReranker):
             raise
 
     def get_model_info(self) -> dict:
-        """返回模型元数据"""
+        """Return model metadata"""
         return {
             "provider": "open_reranker",
             "model": self.model_name,

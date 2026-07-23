@@ -4,17 +4,17 @@ from langchain_core.documents import Document
 
 class BaseReranker(ABC):
     """
-    Rerank (重排序) 模型基类
+    Rerank Model Base Class
     """
     
     @abstractmethod
     def rerank(self, query: str, documents: List[Document], top_k: int = 3) -> List[Document]:
         """
-        核心方法：
-        1. 接收查询和一组文档
-        2. 计算相关性得分
-        3. 按得分降序排列
-        4. 返回前 top_k 个文档
+        Core method:
+        1. Receive query and a set of documents
+        2. Calculate relevance scores
+        3. Sort in descending order by score
+        4. Return top_k documents
         """
         pass
     

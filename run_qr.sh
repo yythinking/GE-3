@@ -1,5 +1,6 @@
 #!/bin/bash
-# run_qr.sh - Query Rewrite 防御方法攻击测试管道启动脚本
+# run_qr.sh - Query Rewrite Defense Attack Testing Pipeline
+# Launches pipeline_QueryRewrite.py with default configuration
 
 python pipeline_QueryRewrite.py \
     --dataset "./datasets/mini_trec_covid.json" \

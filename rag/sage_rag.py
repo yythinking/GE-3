@@ -1,46 +1,50 @@
 # rag/sage_rag.py
 """
-SAGE RAG 引擎 - 独立的SAGE合成数据保护RAG
-与差分隐私(DP)机制完全独立
+SAGE RAG Engine - Standalone SAGE Synthetic Data Protected RAG
+Completely independent from Differential Privacy (DP) mechanism
 
-核心功能:
-1. 使用SAGEEngine管理合成数据生成和检索
-2. 标准RAG回答生成 (不含DP机制)
-3. 保持与BaseEngine接口完全兼容
+Core Functions:
+1. Use SAGEEngine to manage synthetic data generation and retrieval
+2. Standard RAG answer generation (without DP mechanism)
+3. Maintain full compatibility with BaseEngine interface
 
-继承关系:
+Inheritance:
     BaseEngine (ABC)
-        ├── StandardRAGEngine (原始RAG)
-        ├── DPRAGEngine (DP保护RAG)
-        └── SAGERAGEngine (本文件 - SAGE保护RAG)
+        ├── StandardRAGEngine (Original RAG)
+        ├── DPRAGEngine (DP Protected RAG)
+        └── SAGERAGEngine (This file - SAGE Protected RAG)
 
-职责链:
-    用户查询
+Responsibility Chain:
+    User Query
         │
         ▼
     ┌──────────────────────┐
-    │ 意图检测 (安全检查)  │
+    │ Intent Detection     │
+    │ (Safety Check)       │
     └──────────┬───────────┘
                │
                ▼
     ┌──────────────────────┐
-    │ SAGE合成数据检索     │
+    │ SAGE Synthetic Data  │
+    │ Retrieval            │
     │ (SAGEEngine)         │
     └──────────┬───────────┘
                │
                ▼
     ┌──────────────────────┐
-    │ 标准LLM生成回答      │
-    │ (无DP机制)           │
+    │ Standard LLM         │
+    │ Answer Generation    │
+    │ (No DP Mechanism)    │
     └──────────┬───────────┘
                │
                ▼
     ┌──────────────────────┐
-    │ 安全检测 (泄露检查)  │
+    │ Safety Detection     │
+    │ (Leakage Check)      │
     └──────────┬───────────┘
                │
                ▼
-    最终回答
+    Final Answer
 """
 
 import os
@@ -54,14 +58,14 @@ from .sage_engine import SAGEEngine
 
 class SAGERAGEngine(BaseEngine):
     """
-    独立SAGE RAG引擎
+    Standalone SAGE RAG Engine
     
-    使用SAGE合成数据替代原始数据检索，提供隐私保护。
-    不包含任何差分隐私(DP)机制。
+    Uses SAGE synthetic data to replace original data for retrieval, providing privacy protection.
+    Does not contain any Differential Privacy (DP) mechanisms.
 
-    参数:
-        sage_engine: SAGEEngine实例 (管理合成数据)
-        cache_dir: 合成数据缓存目录
+    Parameters:
+        sage_engine: SAGEEngine instance (manages synthetic data)
+        cache_dir: Synthetic data cache directory
     """
 
     def __init__(
@@ -75,10 +79,10 @@ class SAGERAGEngine(BaseEngine):
         sage_engine: SAGEEngine = None,
         cache_dir: str = "./storage/synthetic_data",
     ):
-        # 初始化基类
+        # Initialize base class
         super().__init__(llm, embedding, reranker, top_p, top_k, knowledge_path)
 
-        # SAGE引擎
+        # SAGE engine
         self.sage_engine = sage_engine
         if sage_engine is None:
             print("[SAGE-RAG] Initializing SAGEEngine...")
@@ -89,46 +93,46 @@ class SAGERAGEngine(BaseEngine):
                 cache_dir=cache_dir,
             )
 
-        # 缓存目录
+        # Cache directory
         self.cache_dir = cache_dir
 
-        # 向量存储 (兼容基类接口)
+        # Vector store (compatible with base class interface)
         self.vector_store = None
         self.collection_name = "sage_rag_collection"
 
-        # 统计信息
+        # Statistics
         self._stats = {
             "sage_retrieval_count": 0,
             "synthetic_mode": "sync",
         }
 
-        # 确保SAGE索引已构建
+        # Ensure SAGE index is built
         self._ensure_sage_index()
 
     def _ensure_sage_index(self):
-        """确保SAGE索引已构建"""
+        """Ensure SAGE index is built"""
         if not self.sage_engine._is_index_built:
             print("[SAGE-RAG] Building SAGE synthetic index...")
             self.sage_engine.preprocess_and_build_index()
 
     # ─────────────────────────────────────────────────────────────────
-    # 索引管理 (兼容基类接口)
+    # Index Management (compatible with base class interface)
     # ─────────────────────────────────────────────────────────────────
 
     def _check_index_exists(self, persist_dir: str) -> bool:
-        """检查索引是否存在"""
+        """Check if index exists"""
         if self.sage_engine and self.sage_engine._is_index_built:
             return True
-        # 备用: 检查标准Chroma索引
+        # Backup: check standard Chroma index
         sqlite_path = os.path.join(persist_dir, "chroma.sqlite3")
         return os.path.exists(sqlite_path)
 
     def _build_index(self, docs: List[Document], persist_dir: str):
-        """构建索引 (SAGE模式下使用SAGE引擎)"""
+        """Build index (use SAGE engine in SAGE mode)"""
         if self.sage_engine:
             print(f"[SAGE-RAG] Using SAGE synthetic index, skipping base build_index")
             return
-        # 非SAGE模式备用
+        # Non-SAGE mode backup
         from langchain_chroma import Chroma
         self.vector_store = Chroma.from_documents(
             documents=docs,
@@ -138,11 +142,11 @@ class SAGERAGEngine(BaseEngine):
         )
 
     def _load_index(self, persist_dir: str):
-        """加载索引"""
+        """Load index"""
         if self.sage_engine and self.sage_engine._is_index_built:
             print(f"[SAGE-RAG] Using SAGE synthetic index")
             return
-        # 非SAGE模式备用
+        # Non-SAGE mode backup
         from langchain_chroma import Chroma
         self.vector_store = Chroma(
             persist_directory=persist_dir,
@@ -151,18 +155,18 @@ class SAGERAGEngine(BaseEngine):
         )
 
     # ─────────────────────────────────────────────────────────────────
-    # 检索 (SAGE模式)
+    # Retrieval (SAGE mode)
     # ─────────────────────────────────────────────────────────────────
 
     def search(self, query: str) -> List[Document]:
         """
-        在SAGE合成数据中进行检索
+        Retrieve from SAGE synthetic data
         
-        替换原始文档检索为合成数据检索
+        Replace original document retrieval with synthetic data retrieval
         """
         docs = self.sage_engine.search(query, top_k=self.top_k, top_p=self.top_p)
 
-        # 如果有reranker则重排
+        # Rerank if reranker exists
         if self.reranker and self.top_p > self.top_k:
             docs = self.reranker.rerank(query, docs, top_k=self.top_k)
         elif len(docs) > self.top_k:
@@ -172,36 +176,36 @@ class SAGERAGEngine(BaseEngine):
         return docs
 
     # ─────────────────────────────────────────────────────────────────
-    # 端到端回答
+    # End-to-end Answer
     # ─────────────────────────────────────────────────────────────────
 
     def answer(self, query: str) -> Tuple[str, Optional[List[Document]]]:
         """
-        端到端 RAG + SAGE 生成
+        End-to-end RAG + SAGE Generation
         
-        流程:
-        1. 意图检测
-        2. SAGE合成数据检索
-        3. 标准LLM生成回答 (无DP)
-        4. 安全检测
+        Flow:
+        1. Intent detection
+        2. SAGE synthetic data retrieval
+        3. Standard LLM answer generation (no DP)
+        4. Safety check
         """
-        # 1. 意图检测
+        # 1. Intent detection
         if not self.safety_check_query(query):
             return "Unknown.Intent", None
 
-        # 2. 检索 (SAGE合成数据)
+        # 2. Retrieval (SAGE synthetic data)
         context_docs = self.search(query)
 
         if not context_docs:
             print("[SAGE-RAG] Warning: No documents retrieved from SAGE index")
             return "I don't have enough information to answer.", None
 
-        # 3. 构建prompt并生成回答 (标准方式，无DP)
+        # 3. Build prompt and generate answer (standard method, no DP)
         context_str = "\n\n".join(
             [f"Document {i+1}: {doc.page_content}" for i, doc in enumerate(context_docs)]
         )
 
-        # 选择提示模板
+        # Select prompt template
         if "HP1_5ch" in self.knowledge_path:
             prompt_template = pt.RAG_PROMPT_TEMPLATE_HP
         elif "HealthCareMagic" in self.knowledge_path:
@@ -209,39 +213,39 @@ class SAGERAGEngine(BaseEngine):
         else:
             prompt_template = pt.RAG_PROMPT_TEMPLATE_DEFAULT
 
-        # 构建prompt
+        # Build prompt
         prompt = prompt_template.format(context=context_str, question=query)
         
-        # 生成回答 (标准LLM调用，无DP)
+        # Generate answer (standard LLM call, no DP)
         try:
             response = self.llm.generate(prompt)
         except Exception as e:
             print(f"[SAGE-RAG] Generation failed: {e}")
             return "I encountered an error.", context_docs
 
-        # 4. 安全检测
+        # 4. Safety check
         if not self.safety_check_response(response, context_str):
             return "Unknown.Copy", None
 
         return response, context_docs
 
     # ─────────────────────────────────────────────────────────────────
-    # 统计接口
+    # Statistics Interface
     # ─────────────────────────────────────────────────────────────────
 
     def get_dp_stats(self) -> dict:
-        """返回统计信息 (兼容DP_RAG接口)"""
+        """Return statistics (compatible with DP_RAG interface)"""
         stats = self._stats.copy()
         if self.sage_engine:
             stats["sage_engine"] = self.sage_engine.get_dp_stats()
         return stats
 
     def get_stats(self) -> dict:
-        """返回SAGE特定统计信息"""
+        """Return SAGE-specific statistics"""
         return self._stats.copy()
 
     def reset(self):
-        """重置引擎状态"""
+        """Reset engine state"""
         self._stats = {
             "sage_retrieval_count": 0,
             "synthetic_mode": "sync",
@@ -251,7 +255,7 @@ class SAGERAGEngine(BaseEngine):
 
 
 # =============================================================================
-# 便捷函数
+# Convenience Functions
 # =============================================================================
 
 def create_sage_rag_engine(
@@ -264,9 +268,9 @@ def create_sage_rag_engine(
     cache_dir: str = "./storage/synthetic_data",
 ) -> SAGERAGEngine:
     """
-    创建SAGE RAG引擎的便捷函数
+    Convenience function for creating SAGE RAG engine
     
-    用法示例:
+    Usage Example:
         engine = create_sage_rag_engine(
             llm=llm,
             embedding=embedding,
